@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+.upload-page-section {
+  margin-bottom: 24px;
+}
+
+.upload-card {
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  background: #fff;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.upload-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.upload-card-desc {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 16px;
+}
+
+.upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.upload-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.upload-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.upload-input,
+.upload-select,
+.upload-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cfcfcf;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.upload-input:focus,
+.upload-select:focus,
+.upload-textarea:focus {
+  outline: none;
+  border-color: #111;
+}
+
+.upload-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.upload-btn {
+  padding: 9px 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.upload-btn-primary {
+  padding: 9px 14px;
+  border: 1px solid #111;
+  border-radius: 6px;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.upload-template-box {
+  border: 1px dashed #cfcfcf;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fafafa;
+  margin-top: 12px;
+}
+
+.upload-template-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.upload-template-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  color: #222;
+}
+
+@media (max-width: 768px) {
+  .upload-grid {
+    grid-template-columns: 1fr;
+  }
+}

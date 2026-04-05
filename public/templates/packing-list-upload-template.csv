@@ -1,0 +1,3 @@
+line_no,sku,description,qty,carton_no,po_no,style_code,color,size,eta
+1,SKU001,Sample Item A,100,BOX-001,PO001,ST001,BLACK,M,2026-03-30
+2,SKU002,Sample Item B,50,BOX-002,PO001,ST002,WHITE,L,2026-03-30

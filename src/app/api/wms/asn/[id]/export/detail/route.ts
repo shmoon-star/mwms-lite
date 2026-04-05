@@ -1,0 +1,105 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+type Params = {
+  params: Promise<{ id: string }>;
+};
+
+function csvEscape(v: unknown) {
+  const s = String(v ?? "");
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function makeCsv(headers: string[], rows: any[][]) {
+  return [
+    headers.map(csvEscape).join(","),
+    ...rows.map((r) => r.map(csvEscape).join(",")),
+  ].join("\n");
+}
+
+function n(v: unknown) {
+  return Number(v ?? 0);
+}
+
+export async function GET(_req: Request, { params }: Params) {
+  const { id: asnId } = await params;
+  const sb = await createClient();
+
+  const { data: header } = await sb
+    .from("asn_header")
+    .select("*")
+    .eq("id", asnId)
+    .single();
+
+  const { data: lines } = await sb
+    .from("asn_line")
+    .select("*")
+    .eq("asn_id", asnId)
+    .order("line_no", { ascending: true });
+
+  const skuList = Array.from(
+    new Set((lines || []).map((row: any) => row.sku).filter(Boolean))
+  );
+
+  let products: Record<string, any>[] = [];
+  if (skuList.length > 0) {
+    const { data: productData } = await sb
+      .from("products")
+      .select("sku, name, brand")
+      .in("sku", skuList);
+
+    products = productData || [];
+  }
+
+  const productMap = new Map<string, Record<string, any>>();
+  for (const row of products) {
+    if (row.sku) productMap.set(row.sku, row);
+  }
+
+  const rows = (lines || []).map((row: any) => {
+    const product = productMap.get(row.sku);
+    const expected = n(row.qty_expected ?? row.qty);
+    const received = n(row.qty_received);
+
+    return [
+      header?.asn_no || "",
+      row.line_no ?? "",
+      row.carton_no || "",
+      row.sku || "",
+      product?.brand || "",
+      product?.name || "",
+      expected,
+      received,
+      Math.max(expected - received, 0),
+      row.created_at || "",
+    ];
+  });
+
+  const csv = makeCsv(
+    [
+      "asn_no",
+      "line_no",
+      "carton_no",
+      "sku",
+      "brand",
+      "description",
+      "expected_qty",
+      "received_qty",
+      "balance",
+      "created_at",
+    ],
+    rows
+  );
+
+  return new NextResponse(csv, {
+    headers: {
+      "Content-Type": "text/csv",
+      "Content-Disposition": `attachment; filename="${header?.asn_no || "asn"}_detail.csv"`,
+    },
+  });
+}
