@@ -38,7 +38,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1) 현재 user profile 확인
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
       .select("auth_user_id, user_type, role, vendor_id, status")
@@ -59,7 +58,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2) auth 비밀번호 변경
     const { error: updateAuthError } = await supabase.auth.updateUser({
       password: newPassword,
     });
@@ -71,8 +69,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3) vendor user면 must_change_password 해제
-    if (userType === "VENDOR") {
+    if (profile.user_type === "vendor") {
       const { data: vendorUser, error: vendorUserError } = await supabase
         .from("vendor_users")
         .select("id, first_login_at")

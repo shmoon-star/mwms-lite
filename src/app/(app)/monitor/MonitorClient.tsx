@@ -34,6 +34,10 @@ type DNRow = {
   status?: string | null;
   created_at?: string | null;
   confirmed_at?: string | null;
+
+  ship_from?: string | null;
+  ship_to?: string | null;
+  qty?: number | null;
 };
 
 type MonitorApiResponse = {
@@ -479,21 +483,23 @@ export default function MonitorClient() {
       <div style={{ marginTop: 36 }}>
         <h3 style={{ marginBottom: 8 }}>DN</h3>
         <FilterButtons value={dnFilter} onChange={setDnFilter} />
-        <SectionTable
-          title={`DN List (${dnFilter})`}
-          rows={dnDisplayRows.map((r) => ({
-            id: r.id,
-            no: r.dn_no,
-            status: r.status,
-            created_at: r.created_at,
-            extra_date: r.confirmed_at ?? null,
-          }))}
-          noCol="DN No"
-          openPathPrefix="/outbound/dn"
-          emptyText="No DN data"
-          showExtraDate
-          getActionLabel={(status) => getActionLabelByOpenClosed(isDNOpen(status))}
-        />
+<SectionTable
+  title={`DN List (${dnFilter})`}
+  rows={dnDisplayRows.map((r) => ({
+    id: r.id,
+    no: r.dn_no,
+    status: r.status,
+    created_at: r.created_at,
+    extra_date: r.confirmed_at ?? null,
+  }))}
+  noCol="DN No"
+  openPathPrefix="/outbound/dn"
+  emptyText="No DN data"
+  showExtraDate
+  getActionLabel={(status) =>
+    getActionLabelByOpenClosed(isDNOpen(status))
+  }
+/>
       </div>
     </div>
   );

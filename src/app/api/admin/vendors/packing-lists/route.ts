@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
     }
 
     const isVendorUser =
-      userType === "VENDOR" &&
+      profile.user_type === "VENDOR" &&
       (profile.role === "vendor_admin" || profile.role === "vendor_user") &&
       profile.status === "ACTIVE" &&
       !!profile.vendor_id;
@@ -148,8 +148,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    }
-
+    
     // 4) body parsing
     const body = (await req.json()) as CreatePackingListBody;
 

@@ -52,7 +52,8 @@ export default async function AdminVendorDetailPage({ params }: PageProps) {
   const { id } = await params;
   const data = await getVendorDetail(id);
 
-  const { vendor_id, users } = data;
+  const { vendor, users } = data;
+const vendor_id = vendor?.id;
 
   return (
     <div className="p-6 space-y-6">

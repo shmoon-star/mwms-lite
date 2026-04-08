@@ -8,7 +8,8 @@ type Params = {
 };
 
 function n(v: unknown) {
-  return Number(v ?? 0);
+  const num = Number(v ?? 0);
+  return Number.isFinite(num) ? num : 0;
 }
 
 function pickVendorName(vendor: Record<string, any> | null | undefined) {
@@ -126,9 +127,8 @@ export async function GET(_req: Request, { params }: Params) {
       new Set(lineRows.map((row: any) => row.sku).filter(Boolean))
     );
 
-    let products: Record<string, any>[] = [];
     if (skuList.length > 0) {
-      const { data: productData, error: productError } = await sb
+      const { error: productError } = await sb
         .from("products")
         .select("sku, name, brand")
         .in("sku", skuList);
@@ -139,8 +139,6 @@ export async function GET(_req: Request, { params }: Params) {
           { status: 500 }
         );
       }
-
-      products = productData || [];
     }
 
     const poLineMap = new Map<string, Record<string, any>>();
@@ -158,132 +156,103 @@ export async function GET(_req: Request, { params }: Params) {
       if (row.id) vendorMap.set(row.id, row);
     }
 
-    const productMap = new Map<string, Record<string, any>>();
-    for (const row of products) {
-      if (row.sku) productMap.set(row.sku, row);
-    }
+let poHeader: Record<string, any> | null = null;
 
-    let poHeader: Record<string, any> | null = null;
-    if (header.po_id || header.po_header_id) {
-      poHeader = poHeaderMap.get(header.po_id || header.po_header_id) || null;
-    }
-    if (!poHeader) {
-      const sampleLine = lineRows.find((row: any) => row.po_line_id);
-      if (sampleLine) {
-        const poLine = poLineMap.get(sampleLine.po_line_id);
-        if (poLine) {
-          poHeader = poHeaderMap.get(poLine.po_id || poLine.po_header_id) || null;
-        }
-      }
-    }
+if (header.po_id) {
+  const { data, error } = await sb
+    .from("po_header")
+    .select("*")
+    .eq("id", header.po_id)
+    .maybeSingle();
 
-    const vendor =
-      header.vendor_id
-        ? vendorMap.get(header.vendor_id)
-        : poHeader?.vendor_id
-        ? vendorMap.get(poHeader.vendor_id)
-        : null;
+  if (error) {
+    return NextResponse.json(
+      { ok: false, error: error.message },
+      { status: 500 }
+    );
+  }
 
-    const headerView = {
-      id: header.id,
-      asn_no: header.asn_no || `ASN-${String(header.id).slice(0, 8)}`,
-      po_no: header.po_no || header.po_number || poHeader?.po_no || "-",
-      vendor_label:
-        header.vendor_name ||
-        header.vendor_code ||
-        pickVendorName(vendor),
-      status: header.status || "OPEN",
-      created_at: header.created_at || null,
-      confirmed_at: header.confirmed_at || null,
-    };
+  poHeader = data || null;
+}
+
+let vendor: Record<string, any> | null = null;
+
+if (header.vendor_id) {
+  const { data, error } = await sb
+    .from("vendor")
+    .select("*")
+    .eq("id", header.vendor_id)
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json(
+      { ok: false, error: error.message },
+      { status: 500 }
+    );
+  }
+
+  vendor = data || null;
+}
+
+    const sampleLine = lineRows[0] || {};
+    const samplePoLine = sampleLine?.po_line_id
+      ? poLineMap.get(sampleLine.po_line_id)
+      : null;
+
+const headerView = {
+  id: header.id,
+  asn_no: header.asn_no || `ASN-${String(header.id).slice(0, 8)}`,
+  po_no: poHeader?.po_no || "-",
+  vendor_code: vendor?.vendor_code || vendor?.code || "-",
+  vendor_name: vendor?.vendor_name || vendor?.name || "-",
+  status: header.status || "OPEN",
+  created_at: header.created_at || null,
+  confirmed_at: header.confirmed_at || null,
+};
 
     const lineViews = lineRows.map((row: any) => {
-      const product = productMap.get(row.sku);
-      const expected = n(row.qty_expected ?? row.expected_qty ?? row.qty);
+      const poLine = row.po_line_id ? poLineMap.get(row.po_line_id) : null;
+
+const expected = n(
+  row.qty ??
+    row.asn_qty ??
+    row.qty_expected ??
+    row.expected_qty
+);
+
       const received = n(row.qty_received ?? row.received_qty);
+
       return {
-        id: row.id,
+        asn_line_id: String(row.id),
         line_no: row.line_no ?? null,
-        sku: row.sku || "",
-        brand: product?.brand || "",
-        description: product?.name || "",
-        qty_expected: expected,
-        qty_received: received,
-        balance: Math.max(expected - received, 0),
         carton_no: row.carton_no || "",
-        created_at: row.created_at || null,
+        sku: row.sku || "",
+        asn_qty: expected,
+        received_qty: received,
+        balance_qty: Math.max(expected - received, 0),
       };
     });
 
-    const totalExpected = lineViews.reduce((sum, row) => sum + row.qty_expected, 0);
-    const totalReceived = lineViews.reduce((sum, row) => sum + row.qty_received, 0);
-
-    const cartonMap = new Map<
-      string,
-      {
-        carton_no: string;
-        line_count: number;
-        qty_expected: number;
-        qty_received: number;
-        created_at: string | null;
-        items: Array<{
-          sku: string;
-          brand: string;
-          description: string;
-          qty_expected: number;
-          qty_received: number;
-          balance: number;
-          line_no: number | null;
-          created_at: string | null;
-        }>;
-      }
-    >();
-
-    for (const row of lineViews) {
-      const cartonNo = row.carton_no || "NO_CARTON";
-      const prev = cartonMap.get(cartonNo) || {
-        carton_no: cartonNo,
-        line_count: 0,
-        qty_expected: 0,
-        qty_received: 0,
-        created_at: row.created_at,
-        items: [],
-      };
-
-      prev.line_count += 1;
-      prev.qty_expected += row.qty_expected;
-      prev.qty_received += row.qty_received;
-      if (!prev.created_at && row.created_at) prev.created_at = row.created_at;
-
-      prev.items.push({
-        sku: row.sku,
-        brand: row.brand,
-        description: row.description,
-        qty_expected: row.qty_expected,
-        qty_received: row.qty_received,
-        balance: row.balance,
-        line_no: row.line_no,
-        created_at: row.created_at,
-      });
-
-      cartonMap.set(cartonNo, prev);
-    }
-
-    const cartons = Array.from(cartonMap.values()).sort((a, b) =>
-      String(a.carton_no).localeCompare(String(b.carton_no))
-    );
+    const { data: pendingGr } = await sb
+      .from("gr_header")
+      .select("id, gr_no, status")
+      .eq("asn_id", asnId)
+      .eq("status", "PENDING")
+      .maybeSingle();
 
     return NextResponse.json({
       ok: true,
-      header: headerView,
-      summary: {
-        qty_expected: totalExpected,
-        qty_received: totalReceived,
-        balance: Math.max(totalExpected - totalReceived, 0),
-        carton_count: cartons.length,
+      asn: {
+        id: String(header.id),
+        asn_no: headerView.asn_no,
+        po_no: headerView.po_no,
+        vendor_code: headerView.vendor_code,
+        vendor_name: headerView.vendor_name,
+        gr_id: pendingGr?.id ? String(pendingGr.id) : null,
+        gr_no: pendingGr?.gr_no || null,
+        gr_status: pendingGr?.status || null,
+        lines: lineViews,
       },
-      lines: lineViews,
-      cartons,
     });
   } catch (e: any) {
     return NextResponse.json(

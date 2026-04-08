@@ -55,19 +55,20 @@ export async function POST(req: NextRequest) {
       throw new Error(jobError?.message ?? "Failed to create upload job");
     }
 
-    const linePayload = validated.map((line, idx) => ({
-      upload_job_id: uploadJob.id,
-      line_no: idx + 1,
-      ref_line_id: line.refLineId,
-      sku: line.sku,
-      description: line.description ?? String(rows[idx]?.description ?? "").trim() || null,
-      expected_qty: line.expectedQty,
-      input_qty: line.inputQty,
-      validation_status: line.validationStatus,
-      validation_message: line.validationMessage,
-      is_selected: line.isSelected,
-      raw_payload: rows[idx],
-    }));
+const linePayload = validated.map((line, idx) => ({
+  upload_job_id: uploadJob.id,
+  line_no: idx + 1,
+  ref_line_id: line.refLineId,
+  sku: line.sku,
+  description:
+    (line.description ?? String(rows[idx]?.description ?? "").trim()) || null,
+  expected_qty: line.expectedQty,
+  input_qty: line.inputQty,
+  validation_status: line.validationStatus,
+  validation_message: line.validationMessage,
+  is_selected: line.isSelected,
+  raw_payload: rows[idx],
+}));
 
     const { error: lineError } = await supabase
       .from("upload_job_lines")

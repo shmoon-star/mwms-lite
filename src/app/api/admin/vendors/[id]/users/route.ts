@@ -93,7 +93,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   try {
     const { id: vendorId } = await context.params;
 
-    const { data: vendor_id, error: vendorError } = await supabase
+    const { data: vendor, error: vendorError } = await supabase
       .from("vendor")
       .select("id, vendor_code, vendor_name, brand_name, status")
       .eq("id", vendorId)
@@ -135,7 +135,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     return NextResponse.json(
       {
         ok: true,
-        vendor_id,
+        vendor,
         items: users ?? [],
       },
       { status: 200 }
@@ -203,7 +203,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       );
     }
 
-    const { data: vendor_id, error: vendorError } = await supabase
+    const { data: vendor, error: vendorError } = await supabase
       .from("vendor")
       .select("id, vendor_code, vendor_name, status")
       .eq("id", vendorId)
@@ -327,8 +327,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
           status,
           created_by: user.id,
         })
-        .select(
-          `
+        .select(`
           id,
           vendor_id,
           auth_user_id,
@@ -341,8 +340,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
           created_by,
           created_at,
           updated_at
-        `
-        )
+        `)
         .single();
 
     if (vendorUserInsertError || !insertedVendorUser) {
@@ -391,8 +389,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
         user: insertedVendorUser,
         login: {
           email,
-          temporary_password: initialPassword
-          },
+          temporary_password: initialPassword,
+        },
       },
       { status: 201 }
     );

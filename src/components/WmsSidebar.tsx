@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const menus = [
   { href: "/wms/asn", label: "Open ASN" },
   { href: "/wms/dn", label: "Open DN" },
+  { href: "/wms/shipment", label: "Open Shipment" },
   { href: "/wms/monitor", label: "Monitor" },
 ];
 

@@ -48,7 +48,7 @@ export async function POST(_req: NextRequest, context: RouteContext) {
     }
 
     const isVendorUser =
-      userType === "VENDOR" &&
+      profile.user_type === "VENDOR" &&
       (profile.role === "vendor_admin" || profile.role === "vendor_user") &&
       profile.status === "ACTIVE" &&
       !!profile.vendor_id;
@@ -81,7 +81,6 @@ export async function POST(_req: NextRequest, context: RouteContext) {
         { ok: false, error: "Vendor user is not ACTIVE" },
         { status: 403 }
       );
-    }
     }
 
     // 4) packing list 조회 (자기 vendor 문서인지 확인)

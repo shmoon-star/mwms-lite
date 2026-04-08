@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
 
     const { data: asnHeader, error: asnError } = await supabase
       .from("asn_header")
-      .select("id, status")
-      .eq("asn_no", asnNo)
+      .select("id, asn_no, status")
+      .eq("id", asnId)
       .single();
 
     if (asnError || !asnHeader) {

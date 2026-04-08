@@ -173,8 +173,15 @@ export async function POST(req: Request) {
 
           dnId = createdHeader.id;
         }
+   if (!dnId) {
+          throw new Error(`dnId not resolved for dn_no: ${row.dn_no}`);
+        }
 
         headerCache.set(row.dn_no, dnId);
+      }
+
+      if (!dnId) {
+        throw new Error(`dnId not resolved for dn_no: ${row.dn_no}`);
       }
 
       const { data: existingLine } = await supabase

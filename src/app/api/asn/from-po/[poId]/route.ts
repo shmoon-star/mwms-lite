@@ -1,5 +1,5 @@
 // src/app/api/asn/from-po/[poId]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
   getCurrentUserProfile,
@@ -8,6 +8,12 @@ import {
 } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
+
+type RouteContext = {
+  params: Promise<{
+    poId: string;
+  }>;
+};
 
 function makeAsnNo() {
   const now = new Date();
@@ -20,14 +26,12 @@ function makeAsnNo() {
   return `ASN-${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
 }
 
-export async function POST(
-  _req: Request,
-  { params }: { params: { poId: string } }
-) {
+export async function POST(_req: NextRequest, context: RouteContext) {
   try {
     const sb = await createClient();
     const me = await getCurrentUserProfile();
     const myVendor = await getCurrentVendorInfo(me);
+    const { poId } = await context.params;
 
     const { data: po, error: poError } = await sb
       .from("po_header")
@@ -38,7 +42,7 @@ export async function POST(
         status,
         eta
       `)
-      .eq("id", params.poId)
+      .eq("id", poId)
       .single();
 
     if (poError || !po) {

@@ -8,7 +8,8 @@ type Params = {
 };
 
 function n(v: unknown) {
-  return Number(v ?? 0);
+  const num = Number(v ?? 0);
+  return Number.isFinite(num) ? num : 0;
 }
 
 export async function POST(_req: Request, { params }: Params) {
@@ -98,7 +99,7 @@ export async function POST(_req: Request, { params }: Params) {
 
     const packedMap = new Map<string, number>();
     for (const item of boxItems) {
-      const sku = String(item.sku || "");
+      const sku = String(item.sku || "").trim();
       if (!sku) continue;
       packedMap.set(sku, (packedMap.get(sku) || 0) + n(item.qty));
     }
@@ -107,7 +108,7 @@ export async function POST(_req: Request, { params }: Params) {
     let totalOrdered = 0;
 
     for (const line of lineRows) {
-      const sku = String(line.sku || "");
+      const sku = String(line.sku || "").trim();
       const ordered = n(line.qty_ordered ?? line.qty);
       const packed = packedMap.get(sku) || 0;
 
@@ -122,64 +123,96 @@ export async function POST(_req: Request, { params }: Params) {
       );
     }
 
-    for (const line of lineRows) {
-      const sku = String(line.sku || "");
-      const packed = packedMap.get(sku) || 0;
+    for (const [sku, packed] of packedMap.entries()) {
+      if (!sku || packed <= 0) continue;
 
-      if (packed <= 0) continue;
-
-      const { data: invRow, error: invError } = await sb
-        .from("inventory")
-        .select("*")
+      const { data: existingTx, error: existingTxError } = await sb
+        .from("inventory_tx")
+        .select("id, sku, qty_delta, tx_type, ref_id")
+        .eq("ref_type", "DN")
+        .eq("ref_id", dnId)
+        .eq("tx_type", "DN_SHIP")
         .eq("sku", sku)
         .maybeSingle();
 
-      if (invError) {
+      if (existingTxError) {
         return NextResponse.json(
-          { ok: false, error: invError.message },
+          { ok: false, error: existingTxError.message },
           { status: 500 }
         );
       }
 
-      if (!invRow) {
-        return NextResponse.json(
-          { ok: false, error: `Inventory not found for sku=${sku}` },
-          { status: 400 }
-        );
+      // 이미 같은 DN / SKU / TX_TYPE 전표가 있으면
+      // inventory 차감/tx insert는 다시 하지 않음
+      if (!existingTx) {
+        const { data: invRow, error: invError } = await sb
+          .from("inventory")
+          .select("*")
+          .eq("sku", sku)
+          .maybeSingle();
+
+        if (invError) {
+          return NextResponse.json(
+            { ok: false, error: invError.message },
+            { status: 500 }
+          );
+        }
+
+        if (!invRow) {
+          return NextResponse.json(
+            { ok: false, error: `Inventory not found for sku=${sku}` },
+            { status: 400 }
+          );
+        }
+
+        const nextOnhand = n(invRow.qty_onhand) - packed;
+        const nextReserved = Math.max(n(invRow.qty_reserved) - packed, 0);
+
+        const { error: invUpdateError } = await sb
+          .from("inventory")
+          .update({
+            qty_onhand: nextOnhand,
+            qty_reserved: nextReserved,
+          })
+          .eq("sku", sku);
+
+        if (invUpdateError) {
+          return NextResponse.json(
+            { ok: false, error: invUpdateError.message },
+            { status: 500 }
+          );
+        }
+
+        const { error: txError } = await sb
+          .from("inventory_tx")
+          .insert({
+            sku,
+            tx_type: "DN_SHIP",
+            qty_delta: -packed,
+            ref_type: "DN",
+            ref_id: dnId,
+            created_at: new Date().toISOString(),
+          });
+
+        if (txError) {
+          return NextResponse.json(
+            { ok: false, error: txError.message },
+            { status: 500 }
+          );
+        }
       }
 
-      const nextOnhand = n(invRow.qty_onhand) - packed;
-      const nextReserved = Math.max(n(invRow.qty_reserved) - packed, 0);
-
-      const { error: invUpdateError } = await sb
-        .from("inventory")
+      const { error: dnLineUpdateError } = await sb
+        .from("dn_lines")
         .update({
-          qty_onhand: nextOnhand,
-          qty_reserved: nextReserved,
+          qty_shipped: packed,
         })
+        .eq("dn_id", dnId)
         .eq("sku", sku);
 
-      if (invUpdateError) {
+      if (dnLineUpdateError) {
         return NextResponse.json(
-          { ok: false, error: invUpdateError.message },
-          { status: 500 }
-        );
-      }
-
-      const { error: txError } = await sb
-        .from("inventory_tx")
-        .insert({
-          sku,
-          tx_type: "DN_SHIP",
-          qty_delta: -packed,
-          ref_type: "DN",
-          ref_id: dnId,
-          created_at: new Date().toISOString(),
-        });
-
-      if (txError) {
-        return NextResponse.json(
-          { ok: false, error: txError.message },
+          { ok: false, error: dnLineUpdateError.message },
           { status: 500 }
         );
       }
@@ -188,12 +221,14 @@ export async function POST(_req: Request, { params }: Params) {
     const nextStatus =
       totalPacked >= totalOrdered ? "SHIPPED" : "PARTIAL_SHIPPED";
 
+    const now = new Date().toISOString();
+
     const { error: headerUpdateError } = await sb
       .from("dn_header")
       .update({
         status: nextStatus,
-        confirmed_at: new Date().toISOString(),
-        shipped_at: new Date().toISOString(),
+        confirmed_at: now,
+        shipped_at: now,
       })
       .eq("id", dnId);
 

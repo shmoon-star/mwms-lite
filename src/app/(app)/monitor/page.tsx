@@ -7,7 +7,15 @@ type FilterType = "ALL" | "OPEN" | "CLOSED";
 type PackingListRow = {
   id: string;
   pl_no?: string | null;
+  po_id?: string | null;
   po_no?: string | null;
+  vendor_id?: string | null;
+  vendor_code?: string | null;
+  vendor_name?: string | null;
+  asn_id?: string | null;
+  asn_no?: string | null;
+  eta?: string | null;
+  qty?: number | null;
   status?: string | null;
   created_at?: string | null;
   finalized_at?: string | null;
@@ -18,8 +26,23 @@ type ASNRow = {
   asn_no?: string | null;
   po_no?: string | null;
   po_id?: string | null;
+  vendor_id?: string | null;
+  vendor_code?: string | null;
+  vendor_name?: string | null;
   source_type?: string | null;
-  status?: string | null;
+  source_id?: string | null;
+  source_ref_no?: string | null;
+  header_status?: string | null;
+  computed_status?: string | null;
+  total_cartons?: number | null;
+  po_qty?: number | null;
+  asn_qty?: number | null;
+  received_qty?: number | null;
+  balance_qty?: number | null;
+  gr_id?: string | null;
+  gr_no?: string | null;
+  gr_status?: string | null;
+  gr_confirmed_at?: string | null;
   created_at?: string | null;
 };
 
@@ -33,6 +56,11 @@ type GRRow = {
   asn_no?: string | null;
   po_id?: string | null;
   po_no?: string | null;
+  vendor_id?: string | null;
+  vendor_code?: string | null;
+  vendor_name?: string | null;
+  expected_total?: number | null;
+  received_total?: number | null;
 };
 
 type DNRow = {
@@ -41,16 +69,45 @@ type DNRow = {
   status?: string | null;
   created_at?: string | null;
   confirmed_at?: string | null;
+  ship_from?: string | null;
+  ship_to?: string | null;
+  qty?: number | null;
 };
 
 type MonitorApiResponse = {
   ok: boolean;
-  recent: {
+  open_dn?: number;
+  reserved_dn?: number;
+  shipped_dn?: number;
+
+  open_pl?: number;
+  draft_pl?: number;
+  submitted_pl?: number;
+  finalized_pl?: number;
+  inbound_completed_pl?: number;
+
+  open_asn?: number;
+  created_asn?: number;
+  partial_received_asn?: number;
+  full_received_asn?: number;
+
+  pending_gr?: number;
+  confirmed_gr?: number;
+
+  totals?: {
+    dn?: number;
+    packing_list?: number;
+    asn?: number;
+    gr?: number;
+  };
+
+  recent?: {
     dns: DNRow[];
     packing_lists: PackingListRow[];
     asns: ASNRow[];
     grs: any[];
   };
+
   error?: string;
 };
 
@@ -61,11 +118,37 @@ type SummaryCardProps = {
   closed: number;
 };
 
+type SummaryState = {
+  packing_list: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+  asn: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+  gr: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+  dn: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+};
+
 type ASNLookupRow = {
   id: string;
   asn_no?: string | null;
   po_id?: string | null;
   po_no?: string | null;
+  vendor_id?: string | null;
+  vendor_code?: string | null;
+  vendor_name?: string | null;
 };
 
 function SummaryCard({ title, total, open, closed }: SummaryCardProps) {
@@ -123,28 +206,14 @@ function FilterButtons({
   );
 }
 
-function SectionTable({
+function PackingListSectionTable({
   title,
   rows,
-  noCol,
-  openPathPrefix,
   emptyText,
-  getActionLabel,
-  showExtraDate = false,
 }: {
   title: string;
-  rows: Array<{
-    id: string;
-    no?: string | null;
-    status?: string | null;
-    created_at?: string | null;
-    extra_date?: string | null;
-  }>;
-  noCol: string;
-  openPathPrefix: string;
+  rows: PackingListRow[];
   emptyText?: string;
-  getActionLabel: (status?: string | null) => string;
-  showExtraDate?: boolean;
 }) {
   return (
     <div style={{ marginTop: 28 }}>
@@ -156,25 +225,149 @@ function SectionTable({
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              <th style={th}>{noCol}</th>
+              <th style={th}>PO No</th>
+              <th style={th}>Vendor</th>
+              <th style={th}>PL No</th>
+              <th style={th}>ASN No</th>
+              <th style={th}>ETA</th>
+              <th style={th}>Qty</th>
               <th style={th}>Status</th>
               <th style={th}>Created At</th>
-              {showExtraDate ? <th style={th}>Confirmed / Finalized</th> : null}
+              <th style={th}>Confirmed / Finalized</th>
               <th style={th}>Action</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
-                <td style={td}>{r.no ?? "-"}</td>
+                <td style={td}>
+                  {r.po_id ? (
+                    <a href={`/inbound/po/${r.po_id}`} style={link}>
+                      {r.po_no ?? "-"}
+                    </a>
+                  ) : (
+                    r.po_no ?? "-"
+                  )}
+                </td>
+
+                <td style={td}>
+                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
+                    <span>{r.vendor_name ?? "-"}</span>
+                    <span style={{ fontSize: 12, color: "#666" }}>{r.vendor_code ?? "-"}</span>
+                  </div>
+                </td>
+
+                <td style={td}>
+                  <a href={`/vendor/packing-lists/${r.id}`} style={link}>
+                    {r.pl_no ?? "-"}
+                  </a>
+                </td>
+
+                <td style={td}>
+                  {r.asn_id ? (
+                    <a href={`/inbound/asn/${r.asn_id}`} style={link}>
+                      {r.asn_no ?? "-"}
+                    </a>
+                  ) : (
+                    r.asn_no ?? "-"
+                  )}
+                </td>
+
+                <td style={td}>{formatDate(r.eta)}</td>
+                <td style={td}>{Number(r.qty ?? 0)}</td>
                 <td style={td}>{r.status ?? "-"}</td>
                 <td style={td}>{formatDate(r.created_at)}</td>
-                {showExtraDate ? <td style={td}>{formatDate(r.extra_date)}</td> : null}
+                <td style={td}>{formatDate(r.finalized_at)}</td>
                 <td style={td}>
-                  <a href={`${openPathPrefix}/${r.id}`}>{getActionLabel(r.status)}</a>
+                  <a href={`/vendor/packing-lists/${r.id}`}>
+                    {getActionLabelByOpenClosed(isPLOpen(r.status))}
+                  </a>
                 </td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function ASNSectionTable({
+  title,
+  rows,
+  emptyText,
+}: {
+  title: string;
+  rows: ASNRow[];
+  emptyText?: string;
+}) {
+  return (
+    <div style={{ marginTop: 28 }}>
+      <h3 style={{ marginBottom: 12 }}>{title}</h3>
+
+      {rows.length === 0 ? (
+        <div style={{ color: "#666" }}>{emptyText ?? "No data"}</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={th}>ASN No</th>
+              <th style={th}>Vendor</th>
+              <th style={th}>PO No</th>
+              <th style={th}>PL No</th>
+              <th style={th}>ASN Qty</th>
+              <th style={th}>Received Qty</th>
+              <th style={th}>Balance Qty</th>
+              <th style={th}>Status</th>
+              <th style={th}>GR No</th>
+              <th style={th}>GR Status</th>
+              <th style={th}>Created At</th>
+              <th style={th}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const displayStatus = r.computed_status ?? r.header_status ?? "-";
+              const isOpen = isASNOpen(displayStatus);
+
+              return (
+                <tr key={r.id}>
+                  <td style={td}>
+                    <a href={`/inbound/asn/${r.id}`} style={link}>
+                      {r.asn_no ?? "-"}
+                    </a>
+                  </td>
+
+                  <td style={td}>
+                    {r.vendor_name ? (
+                      <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
+                        <span>{r.vendor_name}</span>
+                        <span style={{ fontSize: 12, color: "#666" }}>
+                          {r.vendor_code ?? "-"}
+                        </span>
+                      </div>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+
+                  <td style={td}>{r.po_no ?? "-"}</td>
+                  <td style={td}>{r.source_ref_no ?? "-"}</td>
+                  <td style={td}>{Number(r.asn_qty ?? 0)}</td>
+                  <td style={td}>{Number(r.received_qty ?? 0)}</td>
+                  <td style={td}>{Number(r.balance_qty ?? 0)}</td>
+                  <td style={td}>{displayStatus}</td>
+                  <td style={td}>{r.gr_no ?? "-"}</td>
+                  <td style={td}>{r.gr_status ?? "-"}</td>
+                  <td style={td}>{formatDate(r.created_at)}</td>
+                  <td style={td}>
+                    <a href={`/inbound/asn/${r.id}`}>
+                      {getActionLabelByOpenClosed(isOpen)}
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -202,8 +395,11 @@ function GRSectionTable({
           <thead>
             <tr>
               <th style={th}>GR No</th>
+              <th style={th}>Vendor</th>
               <th style={th}>ASN No</th>
               <th style={th}>PO No</th>
+              <th style={th}>Expected Qty</th>
+              <th style={th}>Received Qty</th>
               <th style={th}>Status</th>
               <th style={th}>Created At</th>
               <th style={th}>Confirmed</th>
@@ -218,6 +414,14 @@ function GRSectionTable({
                     {r.gr_no ?? "-"}
                   </a>
                 </td>
+
+                <td style={td}>
+                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
+                    <span>{r.vendor_name ?? "-"}</span>
+                    <span style={{ fontSize: 12, color: "#666" }}>{r.vendor_code ?? "-"}</span>
+                  </div>
+                </td>
+
                 <td style={td}>
                   {r.asn_id ? (
                     <a href={`/inbound/asn/${r.asn_id}`} style={link}>
@@ -227,6 +431,7 @@ function GRSectionTable({
                     r.asn_no ?? "-"
                   )}
                 </td>
+
                 <td style={td}>
                   {r.po_id ? (
                     <a href={`/inbound/po/${r.po_id}`} style={link}>
@@ -236,6 +441,9 @@ function GRSectionTable({
                     r.po_no ?? "-"
                   )}
                 </td>
+
+                <td style={td}>{Number(r.expected_total ?? 0)}</td>
+                <td style={td}>{Number(r.received_total ?? 0)}</td>
                 <td style={td}>{r.status ?? "-"}</td>
                 <td style={td}>{formatDate(r.created_at)}</td>
                 <td style={td}>{formatDate(r.confirmed_at)}</td>
@@ -253,48 +461,100 @@ function GRSectionTable({
   );
 }
 
+function DNSectionTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: DNRow[];
+}) {
+  return (
+    <div style={{ marginTop: 28 }}>
+      <h3 style={{ marginBottom: 12 }}>{title}</h3>
+
+      {rows.length === 0 ? (
+        <div style={{ color: "#666" }}>No DN data</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={th}>DN No</th>
+              <th style={th}>Ship From</th>
+              <th style={th}>Ship To</th>
+              <th style={th}>Qty</th>
+              <th style={th}>Status</th>
+              <th style={th}>Created At</th>
+              <th style={th}>Confirmed</th>
+              <th style={th}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td style={td}>
+                  <a href={`/outbound/dn/${r.id}`} style={link}>
+                    {r.dn_no ?? "-"}
+                  </a>
+                </td>
+                <td style={td}>{r.ship_from ?? "-"}</td>
+                <td style={td}>{r.ship_to ?? "-"}</td>
+                <td style={td}>{Number(r.qty ?? 0)}</td>
+                <td style={td}>{r.status ?? "-"}</td>
+                <td style={td}>{formatDate(r.created_at)}</td>
+                <td style={td}>{formatDate(r.confirmed_at)}</td>
+                <td style={td}>
+                  <a href={`/outbound/dn/${r.id}`}>
+                    {getActionLabelByOpenClosed(isDNOpen(r.status))}
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function parseStatus(status?: string | null) {
   return String(status ?? "").trim().toUpperCase();
 }
 
-/* ---------- PL ---------- */
 function isPLOpen(status?: string | null) {
   const s = parseStatus(status);
   return s === "DRAFT" || s === "SUBMITTED" || s === "FINALIZED";
 }
+
 function isPLClosed(status?: string | null) {
   return parseStatus(status) === "INBOUND_COMPLETED";
 }
 
-/* ---------- ASN ---------- */
 function isASNOpen(status?: string | null) {
   const s = parseStatus(status);
-  return s === "CREATED" || s === "PARTIAL_RECEIVED";
-}
-function isASNClosed(status?: string | null) {
-  return sEq(status, "FULL_RECEIVED");
+  return s === "CREATED" || s === "PARTIAL_RECEIVED" || s === "OPEN";
 }
 
-/* ---------- GR ---------- */
+function isASNClosed(status?: string | null) {
+  const s = parseStatus(status);
+  return s === "FULL_RECEIVED" || s === "CONFIRMED";
+}
+
 function isGROpen(status?: string | null) {
   return parseStatus(status) === "PENDING";
 }
+
 function isGRClosed(status?: string | null) {
   return parseStatus(status) === "CONFIRMED";
 }
 
-/* ---------- DN ---------- */
 function isDNOpen(status?: string | null) {
   const s = parseStatus(status);
   return s !== "SHIPPED" && s !== "CONFIRMED";
 }
+
 function isDNClosed(status?: string | null) {
   const s = parseStatus(status);
   return s === "SHIPPED" || s === "CONFIRMED";
-}
-
-function sEq(status: string | null | undefined, target: string) {
-  return parseStatus(status) === target;
 }
 
 function getActionLabelByOpenClosed(isOpen: boolean) {
@@ -323,9 +583,7 @@ function toCsv(rows: Record<string, unknown>[]) {
 
   const lines = [
     headers.join(","),
-    ...rows.map((row) =>
-      headers.map((header) => escapeCsv(row[header])).join(",")
-    ),
+    ...rows.map((row) => headers.map((header) => escapeCsv(row[header])).join(",")),
   ];
 
   return lines.join("\n");
@@ -347,11 +605,19 @@ function pickArray(json: unknown): any[] {
   return [];
 }
 
+const EMPTY_SUMMARY: SummaryState = {
+  packing_list: { total: 0, open: 0, closed: 0 },
+  asn: { total: 0, open: 0, closed: 0 },
+  gr: { total: 0, open: 0, closed: 0 },
+  dn: { total: 0, open: 0, closed: 0 },
+};
+
 export default function MonitorClient() {
   const [packingLists, setPackingLists] = useState<PackingListRow[]>([]);
   const [asnRows, setAsnRows] = useState<ASNRow[]>([]);
   const [grRows, setGrRows] = useState<GRRow[]>([]);
   const [dnRows, setDnRows] = useState<DNRow[]>([]);
+  const [summary, setSummary] = useState<SummaryState>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -374,53 +640,107 @@ export default function MonitorClient() {
       setLoading(true);
       setError("");
 
-      const [monitorRes, asnRes, grRes] = await Promise.all([
+      const [monitorRes, asnRes, grRes, dnRes] = await Promise.all([
         fetch("/api/monitor", { cache: "no-store" }),
         fetch("/api/asn/list", { cache: "no-store" }),
-        fetch("/api/gr", { cache: "no-store" }),
+        fetch("/api/monitor/gr?status=ALL", { cache: "no-store" }),
+        fetch("/api/monitor/dn?status=ALL", { cache: "no-store" }),
       ]);
 
-      const [monitorJson, asnJson, grJson] = await Promise.all([
+      const [monitorJson, asnJson, grJson, dnJson] = await Promise.all([
         parseJsonSafe(monitorRes),
         parseJsonSafe(asnRes),
         parseJsonSafe(grRes),
+        parseJsonSafe(dnRes),
       ]);
 
-      if (!monitorRes.ok || !monitorJson?.ok) {
-        throw new Error(monitorJson?.error || "Failed to load monitor");
+      if (!monitorRes.ok || !(monitorJson as any)?.ok) {
+        throw new Error((monitorJson as any)?.error || "Failed to load monitor");
       }
-      if (!asnRes.ok || asnJson?.ok === false) {
-        throw new Error(asnJson?.error || "Failed to load ASN list");
+      if (!asnRes.ok || (asnJson as any)?.ok === false) {
+        throw new Error((asnJson as any)?.error || "Failed to load ASN list");
       }
-      if (!grRes.ok) {
-        throw new Error(grJson?.error || "Failed to load GR list");
+      if (!grRes.ok || (grJson as any)?.ok === false) {
+        throw new Error((grJson as any)?.error || "Failed to load GR list");
+      }
+      if (!dnRes.ok || (dnJson as any)?.ok === false) {
+        throw new Error((dnJson as any)?.error || "Failed to load DN list");
       }
 
       const monitorData = monitorJson as MonitorApiResponse;
 
+      setSummary({
+        packing_list: {
+          total: Number(monitorData.totals?.packing_list ?? 0),
+          open: Number(monitorData.open_pl ?? 0),
+          closed: Number(monitorData.inbound_completed_pl ?? 0),
+        },
+        asn: {
+          total: Number(monitorData.totals?.asn ?? 0),
+          open: Number(monitorData.open_asn ?? 0),
+          closed: Number(monitorData.full_received_asn ?? 0),
+        },
+        gr: {
+          total: Number(monitorData.totals?.gr ?? 0),
+          open: Number(monitorData.pending_gr ?? 0),
+          closed: Number(monitorData.confirmed_gr ?? 0),
+        },
+        dn: {
+          total: Number(monitorData.totals?.dn ?? 0),
+          open: Number(monitorData.open_dn ?? 0) + Number(monitorData.reserved_dn ?? 0),
+          closed: Number(monitorData.shipped_dn ?? 0),
+        },
+      });
+
+      setPackingLists(monitorData.recent?.packing_lists ?? []);
+
       const rawAsns = pickArray(asnJson);
       const asnLookup = new Map<string, ASNLookupRow>();
 
-      rawAsns.forEach((r: any) => {
-        const id = String(r.id);
-        asnLookup.set(id, {
-          id,
-          asn_no: r.asn_no ?? r.asnNo ?? null,
-          po_id: r.po_id ?? r.poId ?? null,
-          po_no: r.po_no ?? r.poNo ?? null,
+      const mappedAsns: ASNRow[] = rawAsns.map((r: any) => {
+        const row: ASNRow = {
+          id: String(r.id),
+          asn_no: r.asn_no ?? null,
+          po_id: r.po_id ?? null,
+          po_no: r.po_no ?? null,
+          vendor_id: r.vendor_id ?? null,
+          vendor_code: r.vendor_code ?? null,
+          vendor_name: r.vendor_name ?? null,
+          source_type: r.source_type ?? null,
+          source_id: r.source_id ?? null,
+          source_ref_no: r.source_ref_no ?? null,
+          header_status: r.header_status ?? r.status ?? null,
+          computed_status: r.computed_status ?? null,
+          total_cartons: r.total_cartons ?? null,
+          po_qty: r.po_qty ?? null,
+          asn_qty: r.asn_qty ?? null,
+          received_qty: r.received_qty ?? null,
+          balance_qty: r.balance_qty ?? null,
+          gr_id: r.gr_id ?? null,
+          gr_no: r.gr_no ?? null,
+          gr_status: r.gr_status ?? null,
+          gr_confirmed_at: r.gr_confirmed_at ?? null,
+          created_at: r.created_at ?? null,
+        };
+
+        asnLookup.set(row.id, {
+          id: row.id,
+          asn_no: row.asn_no ?? null,
+          po_id: row.po_id ?? null,
+          po_no: row.po_no ?? null,
+          vendor_id: row.vendor_id ?? null,
+          vendor_code: row.vendor_code ?? null,
+          vendor_name: row.vendor_name ?? null,
         });
+
+        return row;
       });
 
+      setAsnRows(mappedAsns);
+
       const rawGr = pickArray(grJson);
-
       const mappedGr: GRRow[] = rawGr.map((r: any) => {
-        const asnId =
-          r.asn_id ??
-          r.asnId ??
-          r.asn?.id ??
-          r.asn_header?.id ??
-          null;
-
+        const asnId = r.asn_id ?? r.asnId ?? r.asn?.id ?? r.asn_header?.id ?? null;
         const lookup = asnId ? asnLookup.get(String(asnId)) : undefined;
 
         return {
@@ -451,19 +771,48 @@ export default function MonitorClient() {
             r.po_header?.po_no ??
             lookup?.po_no ??
             null,
+          vendor_id:
+            r.vendor_id ??
+            r.vendorId ??
+            lookup?.vendor_id ??
+            null,
+          vendor_code:
+            r.vendor_code ??
+            r.vendorCode ??
+            lookup?.vendor_code ??
+            null,
+          vendor_name:
+            r.vendor_name ??
+            r.vendorName ??
+            lookup?.vendor_name ??
+            null,
+          expected_total: r.expected_total ?? r.expectedTotal ?? null,
+          received_total: r.received_total ?? r.receivedTotal ?? null,
         };
       });
 
-      setPackingLists(monitorData.recent?.packing_lists ?? []);
-      setAsnRows(monitorData.recent?.asns ?? []);
       setGrRows(mappedGr);
-      setDnRows(monitorData.recent?.dns ?? []);
+
+      const rawDn = pickArray(dnJson);
+      const mappedDn: DNRow[] = rawDn.map((r: any) => ({
+        id: String(r.id),
+        dn_no: r.dn_no ?? r.dnNo ?? null,
+        status: r.status ?? null,
+        created_at: r.created_at ?? r.createdAt ?? null,
+        confirmed_at: r.confirmed_at ?? r.confirmedAt ?? null,
+        ship_from: r.ship_from ?? null,
+        ship_to: r.ship_to ?? null,
+        qty: r.qty ?? 0,
+      }));
+
+      setDnRows(mappedDn);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load monitor");
       setPackingLists([]);
       setAsnRows([]);
       setGrRows([]);
       setDnRows([]);
+      setSummary(EMPTY_SUMMARY);
     } finally {
       setLoading(false);
     }
@@ -475,48 +824,64 @@ export default function MonitorClient() {
     packingLists.forEach((r) => {
       rows.push({
         type: "PACKING_LIST",
-        no: r.pl_no ?? "",
         po_no: r.po_no ?? "",
-        asn_no: "",
+        vendor_name: r.vendor_name ?? "",
+        vendor_code: r.vendor_code ?? "",
+        pl_no: r.pl_no ?? "",
+        asn_no: r.asn_no ?? "",
+        eta: r.eta ?? "",
+        qty: Number(r.qty ?? 0),
         status: r.status ?? "",
         created_at: r.created_at ?? "",
-        extra_date: r.finalized_at ?? "",
+        finalized_at: r.finalized_at ?? "",
       });
     });
 
     asnRows.forEach((r) => {
       rows.push({
         type: "ASN",
-        no: r.asn_no ?? "",
-        po_no: r.po_no ?? "",
         asn_no: r.asn_no ?? "",
-        status: r.status ?? "",
+        vendor_name: r.vendor_name ?? "",
+        vendor_code: r.vendor_code ?? "",
+        po_no: r.po_no ?? "",
+        pl_no: r.source_ref_no ?? "",
+        asn_qty: Number(r.asn_qty ?? 0),
+        received_qty: Number(r.received_qty ?? 0),
+        balance_qty: Number(r.balance_qty ?? 0),
+        header_status: r.header_status ?? "",
+        computed_status: r.computed_status ?? "",
+        gr_no: r.gr_no ?? "",
+        gr_status: r.gr_status ?? "",
         created_at: r.created_at ?? "",
-        extra_date: "",
       });
     });
 
     grRows.forEach((r) => {
       rows.push({
         type: "GR",
-        no: r.gr_no ?? "",
+        gr_no: r.gr_no ?? "",
+        vendor_name: r.vendor_name ?? "",
+        vendor_code: r.vendor_code ?? "",
         po_no: r.po_no ?? "",
         asn_no: r.asn_no ?? "",
+        expected_total: Number(r.expected_total ?? 0),
+        received_total: Number(r.received_total ?? 0),
         status: r.status ?? "",
         created_at: r.created_at ?? "",
-        extra_date: r.confirmed_at ?? "",
+        confirmed_at: r.confirmed_at ?? "",
       });
     });
 
     dnRows.forEach((r) => {
       rows.push({
         type: "DN",
-        no: r.dn_no ?? "",
-        po_no: "",
-        asn_no: "",
+        dn_no: r.dn_no ?? "",
+        ship_from: r.ship_from ?? "",
+        ship_to: r.ship_to ?? "",
+        qty: Number(r.qty ?? 0),
         status: r.status ?? "",
         created_at: r.created_at ?? "",
-        extra_date: r.confirmed_at ?? "",
+        confirmed_at: r.confirmed_at ?? "",
       });
     });
 
@@ -536,41 +901,23 @@ export default function MonitorClient() {
     load();
   }, []);
 
-  const plOpenRows = useMemo(
-    () => packingLists.filter((r) => isPLOpen(r.status)),
-    [packingLists]
-  );
-  const plClosedRows = useMemo(
-    () => packingLists.filter((r) => isPLClosed(r.status)),
-    [packingLists]
-  );
+  const plOpenRows = useMemo(() => packingLists.filter((r) => isPLOpen(r.status)), [packingLists]);
+  const plClosedRows = useMemo(() => packingLists.filter((r) => isPLClosed(r.status)), [packingLists]);
 
   const asnOpenRows = useMemo(
-    () => asnRows.filter((r) => isASNOpen(r.status)),
+    () => asnRows.filter((r) => isASNOpen(r.computed_status ?? r.header_status)),
     [asnRows]
   );
   const asnClosedRows = useMemo(
-    () => asnRows.filter((r) => isASNClosed(r.status)),
+    () => asnRows.filter((r) => isASNClosed(r.computed_status ?? r.header_status)),
     [asnRows]
   );
 
-  const grOpenRows = useMemo(
-    () => grRows.filter((r) => isGROpen(r.status)),
-    [grRows]
-  );
-  const grClosedRows = useMemo(
-    () => grRows.filter((r) => isGRClosed(r.status)),
-    [grRows]
-  );
+  const grOpenRows = useMemo(() => grRows.filter((r) => isGROpen(r.status)), [grRows]);
+  const grClosedRows = useMemo(() => grRows.filter((r) => isGRClosed(r.status)), [grRows]);
 
-  const dnOpenRows = useMemo(
-    () => dnRows.filter((r) => isDNOpen(r.status)),
-    [dnRows]
-  );
-  const dnClosedRows = useMemo(
-    () => dnRows.filter((r) => isDNClosed(r.status)),
-    [dnRows]
-  );
+  const dnOpenRows = useMemo(() => dnRows.filter((r) => isDNOpen(r.status)), [dnRows]);
+  const dnClosedRows = useMemo(() => dnRows.filter((r) => isDNClosed(r.status)), [dnRows]);
 
   const plDisplayRows = useMemo(() => {
     if (plFilter === "ALL") return packingLists;
@@ -627,7 +974,6 @@ export default function MonitorClient() {
           <button onClick={downloadAllCsv} style={button}>
             Download CSV
           </button>
-
           <button onClick={load} style={button}>
             Refresh
           </button>
@@ -637,65 +983,47 @@ export default function MonitorClient() {
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
         <SummaryCard
           title="Packing List Summary"
-          total={packingLists.length}
-          open={plOpenRows.length}
-          closed={plClosedRows.length}
+          total={summary.packing_list.total}
+          open={summary.packing_list.open}
+          closed={summary.packing_list.closed}
         />
         <SummaryCard
           title="ASN Summary"
-          total={asnRows.length}
-          open={asnOpenRows.length}
-          closed={asnClosedRows.length}
+          total={summary.asn.total}
+          open={summary.asn.open}
+          closed={summary.asn.closed}
         />
         <SummaryCard
           title="GR Summary"
-          total={grRows.length}
-          open={grOpenRows.length}
-          closed={grClosedRows.length}
+          total={summary.gr.total}
+          open={summary.gr.open}
+          closed={summary.gr.closed}
         />
         <SummaryCard
           title="DN Summary"
-          total={dnRows.length}
-          open={dnOpenRows.length}
-          closed={dnClosedRows.length}
+          total={summary.dn.total}
+          open={summary.dn.open}
+          closed={summary.dn.closed}
         />
       </div>
 
       <div style={{ marginTop: 24 }}>
         <h3 style={{ marginBottom: 8 }}>Packing List</h3>
         <FilterButtons value={plFilter} onChange={setPlFilter} />
-        <SectionTable
+        <PackingListSectionTable
           title={`Packing List (${plFilter})`}
-          rows={plDisplayRows.map((r) => ({
-            id: r.id,
-            no: r.pl_no ?? r.po_no ?? r.id,
-            status: r.status,
-            created_at: r.created_at,
-            extra_date: r.finalized_at ?? null,
-          }))}
-          noCol="PL No"
-          openPathPrefix="/vendor/packing-lists"
+          rows={plDisplayRows}
           emptyText="No Packing List data"
-          showExtraDate
-          getActionLabel={(status) => getActionLabelByOpenClosed(isPLOpen(status))}
         />
       </div>
 
       <div style={{ marginTop: 36 }}>
         <h3 style={{ marginBottom: 8 }}>ASN</h3>
         <FilterButtons value={asnFilter} onChange={setAsnFilter} />
-        <SectionTable
+        <ASNSectionTable
           title={`ASN List (${asnFilter})`}
-          rows={asnDisplayRows.map((r) => ({
-            id: r.id,
-            no: r.asn_no,
-            status: r.status,
-            created_at: r.created_at,
-          }))}
-          noCol="ASN No"
-          openPathPrefix="/inbound/asn"
+          rows={asnDisplayRows}
           emptyText="No ASN data"
-          getActionLabel={(status) => getActionLabelByOpenClosed(isASNOpen(status))}
         />
       </div>
 
@@ -712,20 +1040,9 @@ export default function MonitorClient() {
       <div style={{ marginTop: 36 }}>
         <h3 style={{ marginBottom: 8 }}>DN</h3>
         <FilterButtons value={dnFilter} onChange={setDnFilter} />
-        <SectionTable
+        <DNSectionTable
           title={`DN List (${dnFilter})`}
-          rows={dnDisplayRows.map((r) => ({
-            id: r.id,
-            no: r.dn_no,
-            status: r.status,
-            created_at: r.created_at,
-            extra_date: r.confirmed_at ?? null,
-          }))}
-          noCol="DN No"
-          openPathPrefix="/outbound/dn"
-          emptyText="No DN data"
-          showExtraDate
-          getActionLabel={(status) => getActionLabelByOpenClosed(isDNOpen(status))}
+          rows={dnDisplayRows}
         />
       </div>
     </div>

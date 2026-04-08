@@ -1,46 +1,74 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-function normalizeView(view: string) {
-  const v = String(view || "all").toLowerCase();
-  if (v === "open" || v === "closed" || v === "all") return v;
-  return "all";
+function safeNum(v: unknown) {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function isClosedStatus(status?: string | null) {
+type DnMonitorRow = {
+  id: string;
+  dn_no: string;
+  customer_label: string;
+  status: string;
+  qty_ordered: number;
+  qty_packed: number;
+  balance: number;
+  boxes: number;
+  open_boxes: number;
+  closed_boxes: number;
+  created_at: string | null;
+  confirmed_at: string | null;
+};
+
+function pickCustomerLabel(row: Record<string, any>) {
+  return (
+    row.ship_to_name ||
+    row.ship_to ||
+    row.customer_name ||
+    row.company_name ||
+    row.destination ||
+    row.customer ||
+    "-"
+  );
+}
+
+function isClosedDnStatus(status: string) {
   const s = String(status || "").toUpperCase();
-  return ["SHIPPED", "CONFIRMED", "CLOSED"].includes(s);
+  return s === "CONFIRMED" || s === "SHIPPED";
 }
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const sb = await createClient();
     const url = new URL(req.url);
-    const view = normalizeView(url.searchParams.get("view") || "all");
+    const view = (url.searchParams.get("view") || "open").trim().toLowerCase();
 
-    const { data: headers, error: headerError } = await sb
+    if (!["all", "open", "closed"].includes(view)) {
+      return NextResponse.json(
+        { ok: false, error: `unsupported view: ${view}` },
+        { status: 400 }
+      );
+    }
+
+    // 1) DN header
+    const { data: headers, error: headerErr } = await sb
       .from("dn_header")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (headerError) {
-      return NextResponse.json({ ok: false, error: headerError.message }, { status: 500 });
+    if (headerErr) {
+      return NextResponse.json(
+        { ok: false, error: headerErr.message },
+        { status: 500 }
+      );
     }
 
-    const headerRows = (headers || []) as Record<string, any>[];
+    const dnIds = (headers || []).map((x: any) => x.id).filter(Boolean);
 
-    const filteredHeaders =
-      view === "open"
-        ? headerRows.filter((row) => !isClosedStatus(row.status))
-        : view === "closed"
-        ? headerRows.filter((row) => isClosedStatus(row.status))
-        : headerRows;
-
-    const dnIds = filteredHeaders.map((row) => row.id).filter(Boolean);
-
-    if (dnIds.length === 0) {
+    if (!dnIds.length) {
       return NextResponse.json({
         ok: true,
         summary: {
@@ -55,110 +83,134 @@ export async function GET(req: Request) {
       });
     }
 
-    const { data: lines, error: lineError } = await sb
+    // 2) DN lines
+    const { data: dnLines, error: linesErr } = await sb
       .from("dn_lines")
-      .select("*")
+      .select("dn_id, sku, qty_ordered")
       .in("dn_id", dnIds);
 
-    if (lineError) {
-      return NextResponse.json({ ok: false, error: lineError.message }, { status: 500 });
+    if (linesErr) {
+      return NextResponse.json(
+        { ok: false, error: linesErr.message },
+        { status: 500 }
+      );
     }
 
-    const { data: boxes, error: boxError } = await sb
+    // 3) DN box
+    const { data: dnBoxes, error: boxErr } = await sb
       .from("dn_box")
-      .select("*")
+      .select("id, dn_id, box_no, status, created_at")
       .in("dn_id", dnIds);
 
-    if (boxError) {
-      return NextResponse.json({ ok: false, error: boxError.message }, { status: 500 });
+    if (boxErr) {
+      return NextResponse.json(
+        { ok: false, error: boxErr.message },
+        { status: 500 }
+      );
     }
 
-    const boxIds = (boxes || []).map((b: any) => b.id).filter(Boolean);
+    const boxIds = (dnBoxes || []).map((x: any) => x.id).filter(Boolean);
 
+    // 4) DN box item
     let boxItems: any[] = [];
-    if (boxIds.length > 0) {
-      const { data: itemRows, error: itemError } = await sb
+    if (boxIds.length) {
+      const { data, error } = await sb
         .from("dn_box_item")
-        .select("*")
+        .select("dn_box_id, qty")
         .in("dn_box_id", boxIds);
 
-      if (itemError) {
-        return NextResponse.json({ ok: false, error: itemError.message }, { status: 500 });
+      if (error) {
+        return NextResponse.json(
+          { ok: false, error: error.message },
+          { status: 500 }
+        );
       }
 
-      boxItems = itemRows || [];
+      boxItems = data || [];
     }
 
+    // line ordered 집계
     const orderedMap = new Map<string, number>();
-    for (const line of lines || []) {
-      const dnId = line.dn_id;
-      if (!dnId) continue;
-      orderedMap.set(dnId, (orderedMap.get(dnId) || 0) + Number(line.qty_ordered || 0));
+    for (const row of dnLines || []) {
+      orderedMap.set(
+        row.dn_id,
+        (orderedMap.get(row.dn_id) || 0) + safeNum((row as any).qty_ordered)
+      );
     }
 
-    const boxCountMap = new Map<string, number>();
-    const openBoxMap = new Map<string, number>();
-    const closedBoxMap = new Map<string, number>();
-    const boxToDnMap = new Map<string, string>();
+    // box id -> dn_id
+    const boxDnMap = new Map<string, string>();
+    for (const box of dnBoxes || []) {
+      boxDnMap.set(box.id, box.dn_id);
+    }
 
-    for (const box of boxes || []) {
-      const dnId = box.dn_id;
+    // packed qty 집계 (box item 기준)
+    const packedMap = new Map<string, number>();
+    for (const item of boxItems || []) {
+      const dnId = boxDnMap.get(item.dn_box_id);
       if (!dnId) continue;
+
+      packedMap.set(dnId, (packedMap.get(dnId) || 0) + safeNum(item.qty));
+    }
+
+    // box count 집계
+    const boxCountMap = new Map<string, number>();
+    const openBoxCountMap = new Map<string, number>();
+    const closedBoxCountMap = new Map<string, number>();
+
+    for (const box of dnBoxes || []) {
+      const dnId = box.dn_id;
+      const st = String(box.status || "").toUpperCase();
 
       boxCountMap.set(dnId, (boxCountMap.get(dnId) || 0) + 1);
 
-      const status = String(box.status || "").toUpperCase();
-      if (status === "CLOSED") {
-        closedBoxMap.set(dnId, (closedBoxMap.get(dnId) || 0) + 1);
+      if (st === "CLOSED" || st === "PACKED") {
+        closedBoxCountMap.set(dnId, (closedBoxCountMap.get(dnId) || 0) + 1);
       } else {
-        openBoxMap.set(dnId, (openBoxMap.get(dnId) || 0) + 1);
-      }
-
-      if (box.id) {
-        boxToDnMap.set(box.id, dnId);
+        openBoxCountMap.set(dnId, (openBoxCountMap.get(dnId) || 0) + 1);
       }
     }
 
-    const packedMap = new Map<string, number>();
-    for (const item of boxItems || []) {
-      const dnId = boxToDnMap.get(item.dn_box_id);
-      if (!dnId) continue;
-      packedMap.set(dnId, (packedMap.get(dnId) || 0) + Number(item.qty || 0));
-    }
-
-    const items = filteredHeaders.map((row) => {
-      const qtyOrdered = orderedMap.get(row.id) || 0;
-      const qtyPacked = packedMap.get(row.id) || 0;
+    const allRows: DnMonitorRow[] = (headers || []).map((header: any) => {
+      const qtyOrdered = orderedMap.get(header.id) || 0;
+      const qtyPacked = packedMap.get(header.id) || 0;
       const balance = qtyOrdered - qtyPacked;
 
       return {
-        id: row.id,
-        dn_no: row.dn_no || `DN-${String(row.id).slice(0, 8)}`,
-        customer_label:
-          row.ship_to ||
-          row.ship_to_name ||
-          row.customer_name ||
-          row.customer ||
-          "-",
-        status: row.status || "OPEN",
+        id: header.id,
+        dn_no:
+          header.dn_no ||
+          header.DNNo ||
+          header.dnNo ||
+          `DN-${String(header.id).slice(0, 8)}`,
+        customer_label: pickCustomerLabel(header),
+        status: header.status || "OPEN",
         qty_ordered: qtyOrdered,
         qty_packed: qtyPacked,
         balance,
-        box_count: boxCountMap.get(row.id) || 0,
-        open_box_count: openBoxMap.get(row.id) || 0,
-        closed_box_count: closedBoxMap.get(row.id) || 0,
-        created_at: row.created_at || null,
-        shipped_at: row.shipped_at || null,
+        boxes: boxCountMap.get(header.id) || 0,
+        open_boxes: openBoxCountMap.get(header.id) || 0,
+        closed_boxes: closedBoxCountMap.get(header.id) || 0,
+        created_at: header.created_at || null,
+        confirmed_at: header.confirmed_at || header.shipped_at || null,
       };
     });
 
+    let items = allRows;
+
+    if (view === "open") {
+      items = allRows.filter((row) => !isClosedDnStatus(row.status));
+    } else if (view === "closed") {
+      items = allRows.filter((row) => isClosedDnStatus(row.status));
+    }
+
     const summary = {
-      total_dn: items.length,
-      open_dn: items.filter((row) => !isClosedStatus(row.status)).length,
-      closed_dn: items.filter((row) => isClosedStatus(row.status)).length,
-      total_ordered: items.reduce((sum, row) => sum + row.qty_ordered, 0),
-      total_packed: items.reduce((sum, row) => sum + row.qty_packed, 0),
-      total_balance: items.reduce((sum, row) => sum + row.balance, 0),
+      total_dn: allRows.length,
+      open_dn: allRows.filter((row) => !isClosedDnStatus(row.status)).length,
+      closed_dn: allRows.filter((row) => isClosedDnStatus(row.status)).length,
+      total_ordered: items.reduce((sum, row) => sum + safeNum(row.qty_ordered), 0),
+      total_packed: items.reduce((sum, row) => sum + safeNum(row.qty_packed), 0),
+      total_balance: items.reduce((sum, row) => sum + safeNum(row.balance), 0),
     };
 
     return NextResponse.json({
@@ -168,7 +220,7 @@ export async function GET(req: Request) {
     });
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "Unexpected error" },
+      { ok: false, error: e?.message || "unexpected error" },
       { status: 500 }
     );
   }

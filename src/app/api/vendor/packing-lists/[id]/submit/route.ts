@@ -207,22 +207,19 @@ const { data: updatedHeader, error: updateError } = await supabase
       ? await getVendorInfo(updatedHeader.vendor_id)
       : null;
 
-    await safeNotify(`PL_SUBMITTED:${updatedHeader.pl_no || updatedHeader.id}`, async () => {
-      await notifyPackingListSubmitted({
-        packingListNo: updatedHeader.pl_no || updatedHeader.id,
-        poNo: updatedHeader.po_no || null,
-        vendorName: vendorInfo?.vendor_name || vendorInfo?.vendor_code || null,
-      });
-    });
-
-    return NextResponse.json(
-      {
-        ok: true,
-        message: "Packing List submitted successfully",
-        data: updatedHeader,
-      },
-      { status: 200 }
+     await safeNotify(
+      `PL_SUBMITTED:${updatedHeader.pl_no || updatedHeader.id}`,
+      async () => {
+        await notifyPackingListSubmitted({
+          packingListId: updatedHeader.id,
+          packingListNo: updatedHeader.pl_no || updatedHeader.id,
+          poNo: updatedHeader.po_no || null,
+          vendorName:
+            vendorInfo?.vendor_name || vendorInfo?.vendor_code || null,
+        });
+      }
     );
+
     return NextResponse.json(
       {
         ok: true,

@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 type POHeaderRow = {
   id: string;
   po_no: string | null;
+  vendor_id: string | null;
   status: string | null;
   eta: string | null;
   created_at: string | null;
@@ -19,12 +20,21 @@ type ASNHeaderRow = {
   created_at?: string | null;
 };
 
+type VendorRow = {
+  id: string;
+  vendor_code: string | null;
+  vendor_name: string | null;
+};
+
 type POListItem = {
   id: string;
   po_no: string | null;
   status: string | null;
   eta: string | null;
   created_at: string | null;
+  vendor_name: string | null;
+  vendor_code: string | null;
+  total_qty: number;
   asns: {
     id: string;
     asn_no: string | null;
@@ -37,7 +47,7 @@ export default async function POListPage() {
 
   const { data: poRows, error: poError } = await sb
     .from("po_header")
-    .select("id, po_no, status, eta, created_at")
+    .select("id, po_no, vendor_id, status, eta, created_at")
     .order("created_at", { ascending: false });
 
   if (poError) {
@@ -45,8 +55,50 @@ export default async function POListPage() {
   }
 
   const poIds = Array.from(
-    new Set((poRows || []).map((r) => r.id).filter(Boolean))
+    new Set((poRows || []).map((r: any) => r.id).filter(Boolean))
   );
+
+  const vendorIds = Array.from(
+    new Set((poRows || []).map((r: any) => r.vendor_id).filter(Boolean))
+  );
+
+  let vendorMap = new Map<string, VendorRow>();
+  if (vendorIds.length > 0) {
+    const { data: vendorRows, error: vendorError } = await sb
+      .from("vendor")
+      .select("id, vendor_code, vendor_name")
+      .in("id", vendorIds);
+
+    if (vendorError) {
+      return <div style={{ padding: 20 }}>Error: {vendorError.message}</div>;
+    }
+
+    vendorMap = new Map(
+      ((vendorRows || []) as VendorRow[]).map((row) => [row.id, row])
+    );
+  }
+
+  let qtyMap = new Map<string, number>();
+  if (poIds.length > 0) {
+const { data: poLineRows, error: poLineError } = await sb
+  .from("po_line")
+  .select("po_id, qty, qty_ordered")
+  .in("po_id", poIds);
+
+    if (poLineError) {
+      return <div style={{ padding: 20 }}>Error: {poLineError.message}</div>;
+    }
+
+qtyMap = (poLineRows || []).reduce((map, row: any) => {
+  const key = String(row.po_id || "");
+  if (!key) return map;
+
+  const prev = map.get(key) || 0;
+  const qty = Number(row.qty_ordered ?? row.qty ?? 0);
+  map.set(key, prev + (Number.isFinite(qty) ? qty : 0));
+  return map;
+}, new Map<string, number>());
+  }
 
   let asnMap = new Map<
     string,
@@ -83,15 +135,29 @@ export default async function POListPage() {
     }, new Map<string, { id: string; asn_no: string | null; source_type: string | null }[]>());
   }
 
-  const rows: POListItem[] = (poRows || []).map((row: POHeaderRow) => ({
-    ...row,
-    asns: asnMap.get(row.id) || [],
-  }));
+  const rows: POListItem[] = (poRows || []).map((row: POHeaderRow) => {
+    const vendor = row.vendor_id ? vendorMap.get(row.vendor_id) : null;
+
+    return {
+      id: row.id,
+      po_no: row.po_no,
+      status: row.status,
+      eta: row.eta,
+      created_at: row.created_at,
+      vendor_name: vendor?.vendor_name ?? null,
+      vendor_code: vendor?.vendor_code ?? null,
+      total_qty: qtyMap.get(row.id) || 0,
+      asns: asnMap.get(row.id) || [],
+    };
+  });
 
   const csvRows = rows.map((row) => ({
     po_no: row.po_no ?? "",
-    status: row.status ?? "",
+    vendor_code: row.vendor_code ?? "",
+    vendor_name: row.vendor_name ?? "",
     eta: row.eta ?? "",
+    total_qty: row.total_qty,
+    status: row.status ?? "",
     created_at: row.created_at ?? "",
     asn_count: row.asns.length,
     asn_nos: row.asns.map((a) => a.asn_no ?? "").join(" | "),
@@ -129,15 +195,17 @@ export default async function POListPage() {
         >
           <div style={card}>
             <div style={cardTitle}>PO Header CSV</div>
-            <div style={hint}>
-              Header 업로드 먼저 진행
-            </div>
+            <div style={hint}>Header 업로드 먼저 진행</div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-              <a
-                href="/api/po/template-header"
-                style={button}
-              >
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginTop: 10,
+              }}
+            >
+              <a href="/api/po/template-header" style={button}>
                 Download Header Template
               </a>
             </div>
@@ -157,15 +225,17 @@ export default async function POListPage() {
 
           <div style={card}>
             <div style={cardTitle}>PO Line CSV</div>
-            <div style={hint}>
-              Header 생성 후 Line 업로드 진행
-            </div>
+            <div style={hint}>Header 생성 후 Line 업로드 진행</div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-              <a
-                href="/api/po/template-lines"
-                style={button}
-              >
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginTop: 10,
+              }}
+            >
+              <a href="/api/po/template-lines" style={button}>
                 Download Line Template
               </a>
             </div>
@@ -222,8 +292,10 @@ export default async function POListPage() {
           <thead>
             <tr>
               <th style={th}>PO No</th>
-              <th style={th}>Status</th>
+              <th style={th}>Vendor</th>
               <th style={th}>ETA</th>
+              <th style={th}>Qty</th>
+              <th style={th}>Status</th>
               <th style={th}>Created At</th>
               <th style={th}>ASN</th>
               <th style={th}>Action</th>
@@ -233,8 +305,14 @@ export default async function POListPage() {
             {rows.map((row) => (
               <tr key={row.id}>
                 <td style={td}>{row.po_no ?? "-"}</td>
-                <td style={td}>{row.status ?? "-"}</td>
+                <td style={td}>
+                  {row.vendor_name
+                    ? `${row.vendor_name}${row.vendor_code ? ` (${row.vendor_code})` : ""}`
+                    : "-"}
+                </td>
                 <td style={td}>{row.eta ?? "-"}</td>
+                <td style={td}>{row.total_qty}</td>
+                <td style={td}>{row.status ?? "-"}</td>
                 <td style={td}>{formatDateTime(row.created_at)}</td>
                 <td style={td}>
                   {row.asns.length === 0 ? (

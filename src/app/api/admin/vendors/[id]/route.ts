@@ -53,7 +53,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
 
-    const { data: vendor_id, error } = await supabase
+    const { data: vendor, error } = await supabase
       .from("vendor")
       .select("*")
       .eq("id", id)

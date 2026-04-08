@@ -110,7 +110,7 @@ function parseCsv(text: string): ParsedRow[] {
 
 export async function POST(req: Request) {
   try {
-    const sb = createClient();
+    const sb = await createClient();
 
     const formData = await req.formData();
     const file = formData.get("file");

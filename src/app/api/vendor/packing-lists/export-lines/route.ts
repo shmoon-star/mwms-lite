@@ -42,6 +42,8 @@ async function getAuthorizedVendorUser() {
     };
   }
 
+  const userType = (profile.user_type || "").toUpperCase();
+
   const isVendorUser =
     userType === "VENDOR" &&
     (profile.role === "vendor_admin" || profile.role === "vendor_user") &&

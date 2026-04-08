@@ -7,6 +7,9 @@ type DNHeader = {
   id: string;
   dn_no: string | null;
   status: string | null;
+  ship_from?: string | null;
+  ship_to?: string | null;
+  qty_total?: number | null;
   created_at: string | null;
   confirmed_at: string | null;
   reserved_at?: string | null;
@@ -337,13 +340,16 @@ DN-20260317-0001,ICN_WH,JP_TOKYO_STORE,2026-03-18,2026-03-20,2026-03-18,SKU002,5
 
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
-          <tr>
-            <th style={th}>DN No</th>
-            <th style={th}>Status</th>
-            <th style={th}>Created At</th>
-            <th style={th}>Confirmed At</th>
-            <th style={th}>Action</th>
-          </tr>
+<tr>
+  <th style={th}>DN No</th>
+  <th style={th}>Ship From</th>
+  <th style={th}>Ship To</th>
+  <th style={th}>Qty</th>
+  <th style={th}>Status</th>
+  <th style={th}>Created At</th>
+  <th style={th}>Confirmed At</th>
+  <th style={th}>Action</th>
+</tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
@@ -354,17 +360,20 @@ DN-20260317-0001,ICN_WH,JP_TOKYO_STORE,2026-03-18,2026-03-20,2026-03-18,SKU002,5
             </tr>
           ) : (
             rows.map((row) => (
-              <tr key={row.id}>
-                <td style={td}>{row.dn_no ?? "-"}</td>
-                <td style={td}>{mapStatusLabel(row.status)}</td>
-                <td style={td}>{row.created_at ?? "-"}</td>
-                <td style={td}>{row.confirmed_at ?? "-"}</td>
-                <td style={td}>
-                  <button onClick={() => router.push(`/outbound/dn/${row.id}`)}>
-                    Open
-                  </button>
-                </td>
-              </tr>
+<tr key={row.id}>
+  <td style={td}>{row.dn_no ?? "-"}</td>
+  <td style={td}>{row.ship_from ?? "-"}</td>
+  <td style={td}>{row.ship_to ?? "-"}</td>
+  <td style={td}>{row.qty_total ?? 0}</td>
+  <td style={td}>{mapStatusLabel(row.status)}</td>
+  <td style={td}>{row.created_at ?? "-"}</td>
+  <td style={td}>{row.confirmed_at ?? "-"}</td>
+  <td style={td}>
+    <button onClick={() => router.push(`/outbound/dn/${row.id}`)}>
+      Open
+    </button>
+  </td>
+</tr>
             ))
           )}
         </tbody>

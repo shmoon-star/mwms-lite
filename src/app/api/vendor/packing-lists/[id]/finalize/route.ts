@@ -30,6 +30,7 @@ type PackingListLineRow = {
   line_no: number | null;
   sku: string | null;
   qty: number | null;
+  carton_no: string | null;
 };
 
 type POHeaderRow = {
@@ -205,7 +206,7 @@ export async function POST(_req: NextRequest, context: RouteContext) {
 
     const { data: lineRows, error: linesError } = await supabase
       .from("packing_list_lines")
-      .select("id, line_no, sku, qty")
+      .select("id, line_no, sku, qty, carton_no")
       .eq("packing_list_id", id)
       .order("line_no", { ascending: true });
 
@@ -217,6 +218,15 @@ export async function POST(_req: NextRequest, context: RouteContext) {
     }
 
     const lines = (lineRows ?? []) as PackingListLineRow[];
+
+    console.log(
+  "FINALIZE lines",
+  lines.map((x) => ({
+    line_no: x.line_no,
+    sku: x.sku,
+    carton_no: x.carton_no,
+  }))
+);
 
     if (lines.length === 0) {
       return NextResponse.json(
@@ -267,7 +277,10 @@ export async function POST(_req: NextRequest, context: RouteContext) {
       sku: line.sku,
       qty: Number(line.qty ?? 0),
       qty_received: 0,
+      carton_no: (line as any).carton_no ?? null,
     }));
+
+    console.log("FINALIZE asnLinePayload", asnLinePayload);
 
     const { error: asnLineError } = await supabase
       .from("asn_line")
@@ -284,6 +297,14 @@ export async function POST(_req: NextRequest, context: RouteContext) {
         { status: 500 }
       );
     }
+const { data: insertedAsnLines, error: insertedAsnLinesError } = await supabase
+  .from("asn_line")
+  .select("id, line_no, sku, carton_no")
+  .eq("asn_id", asnId)
+  .order("line_no", { ascending: true });
+
+console.log("FINALIZE insertedAsnLines", insertedAsnLines, insertedAsnLinesError);
+
 
     const { error: plUpdateError } = await supabase
       .from("packing_list_header")
@@ -325,6 +346,7 @@ const { error: poUpdateError } = await supabase
 
     await safeNotify(`ASN_CREATED:${asnNo}`, async () => {
       await notifyAsnCreatedFromPackingList({
+        packingListId: header.id,
         packingListNo: header.pl_no || header.id,
         asnNo,
         poNo: po.po_no || null,

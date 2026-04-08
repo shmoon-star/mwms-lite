@@ -7,6 +7,9 @@ type DNHeader = {
   id: string;
   dn_no: string | null;
   status: string | null;
+  ship_from?: string | null;
+  ship_to?: string | null;
+  qty_total?: number | null;
   created_at: string | null;
   confirmed_at: string | null;
   reserved_at?: string | null;
@@ -132,40 +135,61 @@ export default function DNListClient() {
 
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
-          <tr>
-            <th style={th}>DN No</th>
-            <th style={th}>Status</th>
-            <th style={th}>Created At</th>
-            <th style={th}>Confirmed At</th>
-            <th style={th}>Action</th>
-          </tr>
+<tr>
+  <th style={th}>DN No</th>
+  <th style={th}>Ship From</th>
+  <th style={th}>Ship To</th>
+  <th style={th}>Qty</th>
+  <th style={th}>Status</th>
+  <th style={th}>Created At</th>
+  <th style={th}>Confirmed At</th>
+  <th style={th}>Action</th>
+</tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td style={td} colSpan={5}>
+              <td style={td} colSpan={8}>
                 No DN records
               </td>
             </tr>
           ) : (
             rows.map((row) => (
-              <tr key={row.id}>
-                <td style={td}>{row.dn_no ?? "-"}</td>
-                <td style={td}>{row.status ?? "-"}</td>
-                <td style={td}>{row.created_at ?? "-"}</td>
-                <td style={td}>{row.confirmed_at ?? "-"}</td>
-                <td style={td}>
-                  <button onClick={() => router.push(`/outbound/dn/${row.id}`)}>
-                    Open
-                  </button>
-                </td>
-              </tr>
+<tr key={row.id}>
+  <td style={td}>{row.dn_no ?? "-"}</td>
+  <td style={td}>{row.ship_from ?? "-"}</td>
+  <td style={td}>{row.ship_to ?? "-"}</td>
+  <td style={td}>{row.qty_total ?? 0}</td>
+  <td style={td}>{mapStatusLabel(row.status)}</td>
+  <td style={td}>{row.created_at ?? "-"}</td>
+  <td style={td}>{row.confirmed_at ?? "-"}</td>
+  <td style={td}>
+    <button onClick={() => router.push(`/outbound/dn/${row.id}`)}>
+      Open
+    </button>
+  </td>
+</tr>
             ))
           )}
         </tbody>
       </table>
     </div>
   );
+}
+
+function mapStatusLabel(status?: string | null) {
+  const s = String(status ?? "").trim().toUpperCase();
+
+  if (s === "PENDING") return "Pending";
+  if (s === "RESERVED") return "Reserved";
+  if (s === "PICKED") return "Picked";
+  if (s === "PACKED") return "Packed";
+  if (s === "PARTIAL_SHIPPED") return "Partial Shipped";
+  if (s === "SHIPPED") return "Shipped";
+  if (s === "CONFIRMED") return "Confirmed";
+  if (s === "CANCELLED") return "Cancelled";
+
+  return s || "-";
 }
 
 const th: React.CSSProperties = {

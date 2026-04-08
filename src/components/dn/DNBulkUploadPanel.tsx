@@ -126,7 +126,18 @@ export default function DNBulkUploadPanel({ dnId }: Props) {
         </div>
       </div>
 
-      <UploadSummaryCard {...summary} />
+      <UploadSummaryCard
+  title="DN Bulk Upload Summary"
+  headers={[
+    "SKU",
+    "Reserved Qty",
+    "Current Shipped",
+    "Uploaded Ship Qty",
+    "Status",
+    "Message",
+  ]}
+  {...summary}
+/>
 
       <UploadPreviewGrid
         rows={rows}

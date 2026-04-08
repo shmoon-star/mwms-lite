@@ -169,7 +169,7 @@ async function getAuthorizedVendorUser() {
   }
 
   const isVendorUser =
-    userType === "VENDOR" &&
+    profile.user_type === "VENDOR" &&
     (profile.role === "vendor_admin" || profile.role === "vendor_user") &&
     profile.status === "ACTIVE" &&
     !!profile.vendor_id;
@@ -205,7 +205,6 @@ async function getAuthorizedVendorUser() {
       supabase,
       error: "Vendor user is not ACTIVE",
     };
-  }
   }
 
   return {

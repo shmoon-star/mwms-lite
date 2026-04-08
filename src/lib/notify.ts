@@ -157,7 +157,7 @@ export async function getInternalRecipients() {
   }
 
   return (data ?? [])
-    .map((row: UserProfileRow) => row.email || "")
+    .map((row) => row.email || "")
     .filter(Boolean);
 }
 

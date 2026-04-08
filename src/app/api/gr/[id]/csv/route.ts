@@ -1,7 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+type RouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
 
 function toCsv(rows: Record<string, any>[]) {
   const headers = Object.keys(rows[0] ?? {});
@@ -16,13 +22,18 @@ function toCsv(rows: Record<string, any>[]) {
   return lines.join("\n");
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, context: RouteContext) {
   const sb = await createClient();
 
   try {
-    const grId = String(params?.id ?? "").trim();
+    const { id } = await context.params;
+    const grId = String(id ?? "").trim();
+
     if (!grId) {
-      return NextResponse.json({ ok: false, error: "Invalid GR id" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Invalid GR id" },
+        { status: 400 }
+      );
     }
 
     const { data: header, error: hErr } = await sb
@@ -30,6 +41,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       .select("id, gr_no")
       .eq("id", grId)
       .single();
+
     if (hErr) throw hErr;
 
     const { data: lines, error: lErr } = await sb
@@ -37,27 +49,34 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       .select("id, gr_id, sku, qty_expected, qty_received, asn_line_id")
       .eq("gr_id", grId)
       .order("created_at", { ascending: true });
+
     if (lErr) throw lErr;
 
     const rows = (lines ?? []).map((l) => ({
       gr_no: header.gr_no ?? "",
       gr_id: l.gr_id,
-      gr_line_id: l.id,          // ✅ 테이블명과 무관, 그냥 라인 PK
+      gr_line_id: l.id,
       sku: l.sku ?? "",
       qty_expected: Number((l as any).qty_expected ?? 0),
       qty_received: Number((l as any).qty_received ?? 0),
       asn_line_id: (l as any).asn_line_id ?? "",
     }));
 
-    const csv = toCsv(rows.length ? rows : [{
-      gr_no: header.gr_no ?? "",
-      gr_id: grId,
-      gr_line_id: "",
-      sku: "",
-      qty_expected: "",
-      qty_received: "",
-      asn_line_id: "",
-    }]);
+    const csv = toCsv(
+      rows.length
+        ? rows
+        : [
+            {
+              gr_no: header.gr_no ?? "",
+              gr_id: grId,
+              gr_line_id: "",
+              sku: "",
+              qty_expected: "",
+              qty_received: "",
+              asn_line_id: "",
+            },
+          ]
+    );
 
     return new NextResponse(csv, {
       status: 200,

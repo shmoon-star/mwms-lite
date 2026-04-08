@@ -3,15 +3,28 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+type LedgerRow = {
+  id?: string;
+  sku: string;
+  tx_type: string;
+  qty_delta: number;
+  ref_type?: string | null;
+  ref_id?: string | null;
+  ref_display_type?: string | null;
+  ref_no?: string | null;
+  related_no?: string | null;
+  link_href?: string | null;
+  created_at?: string | null;
+  display_time?: string | null;
+};
+
 export default function InventoryLedgerPage() {
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<LedgerRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [sku, setSku] = useState("");
   const [txType, setTxType] = useState("");
   const [refType, setRefType] = useState("");
-
-  // ✅ 날짜 상태
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
@@ -27,7 +40,6 @@ export default function InventoryLedgerPage() {
     if (toDate) params.set("to_date", toDate);
 
     const url = `/api/inventory/ledger?${params.toString()}`;
-
     const res = await fetch(url, { cache: "no-store" });
     const json = await res.json();
 
@@ -40,7 +52,7 @@ export default function InventoryLedgerPage() {
   }, []);
 
   const total = useMemo(() => {
-    return rows.reduce((sum, r) => sum + (r.qty_delta ?? 0), 0);
+    return rows.reduce((sum, r) => sum + Number(r.qty_delta ?? 0), 0);
   }, [rows]);
 
   function downloadCsv() {
@@ -61,16 +73,33 @@ export default function InventoryLedgerPage() {
     <div style={{ padding: 20 }}>
       <h2>Inventory Ledger</h2>
 
-      {/* 필터 영역 */}
       <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input placeholder="SKU" value={sku} onChange={(e) => setSku(e.target.value)} />
-          <input placeholder="TX Type" value={txType} onChange={(e) => setTxType(e.target.value)} />
-          <input placeholder="Ref Type" value={refType} onChange={(e) => setRefType(e.target.value)} />
-
-          {/* ✅ 날짜 필터 */}
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          <input
+            placeholder="SKU"
+            value={sku}
+            onChange={(e) => setSku(e.target.value)}
+          />
+          <input
+            placeholder="TX Type"
+            value={txType}
+            onChange={(e) => setTxType(e.target.value)}
+          />
+          <input
+            placeholder="Ref Type"
+            value={refType}
+            onChange={(e) => setRefType(e.target.value)}
+          />
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
         </div>
 
         <div style={{ marginTop: 10 }}>
@@ -103,13 +132,15 @@ export default function InventoryLedgerPage() {
             <th style={th}>SKU</th>
             <th style={th}>TX</th>
             <th style={th}>Qty</th>
-            <th style={th}>Ref</th>
+            <th style={th}>Ref Type</th>
+            <th style={th}>Ref No</th>
+            <th style={th}>Related</th>
             <th style={th}>Time</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr key={r.id ?? i}>
               <td style={td}>
                 <button onClick={() => setSku(r.sku)} style={link}>
                   {r.sku}
@@ -122,15 +153,19 @@ export default function InventoryLedgerPage() {
                 <b>{r.qty_delta}</b>
               </td>
 
+              <td style={td}>{r.ref_display_type || r.ref_type || "-"}</td>
+
               <td style={td}>
-                {r.ref_type === "DN" ? (
-                  <Link href={`/outbound/dn/${r.ref_id}`}>{r.ref_id}</Link>
+                {r.link_href ? (
+                  <Link href={r.link_href}>{r.ref_no || r.ref_id || "-"}</Link>
                 ) : (
-                  r.ref_id
+                  r.ref_no || r.ref_id || "-"
                 )}
               </td>
 
-              <td style={td}>{r.created_at}</td>
+              <td style={td}>{r.related_no || "-"}</td>
+
+              <td style={td}>{r.display_time || r.created_at || "-"}</td>
             </tr>
           ))}
         </tbody>

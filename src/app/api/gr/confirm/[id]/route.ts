@@ -131,14 +131,117 @@ export async function POST(
 
     // ASN 상태도 같이 종료 처리
     if (grHeader.asn_id) {
+      const { data: asnHeader, error: asnHeaderErr } = await sb
+        .from("asn_header")
+        .select("id, po_id, po_no")
+        .eq("id", grHeader.asn_id)
+        .maybeSingle();
+
+      if (asnHeaderErr) throw asnHeaderErr;
+
+      const { data: asnLines, error: asnLinesErr } = await sb
+        .from("asn_line")
+        .select("id, qty, qty_expected, qty_received")
+        .eq("asn_id", grHeader.asn_id);
+
+      if (asnLinesErr) throw asnLinesErr;
+
+      const totalExpected = (asnLines || []).reduce((sum: number, row: any) => {
+        return sum + Number(row.qty ?? row.qty_expected ?? 0);
+      }, 0);
+
+      const totalReceived = (asnLines || []).reduce((sum: number, row: any) => {
+        return sum + Number(row.qty_received ?? 0);
+      }, 0);
+
+      let nextAsnStatus = "OPEN";
+      if (totalReceived > 0 && totalReceived < totalExpected) {
+        nextAsnStatus = "PARTIAL_RECEIVED";
+      }
+      if (totalExpected > 0 && totalReceived >= totalExpected) {
+        nextAsnStatus = "FULL_RECEIVED";
+      }
+
       const { error: asnUpdateErr } = await sb
         .from("asn_header")
         .update({
-          status: "RECEIVED",
+          status: nextAsnStatus,
         })
         .eq("id", grHeader.asn_id);
 
       if (asnUpdateErr) throw asnUpdateErr;
+
+      // PO status도 같이 갱신
+      const poId = asnHeader?.po_id ?? null;
+      const poNo = asnHeader?.po_no ?? null;
+
+      if (poId || poNo) {
+        let relatedAsns: any[] = [];
+
+        if (poId) {
+          const { data, error } = await sb
+            .from("asn_header")
+            .select("id, status")
+            .eq("po_id", poId);
+
+          if (error) throw error;
+          relatedAsns = data || [];
+        } else if (poNo) {
+          const { data, error } = await sb
+            .from("asn_header")
+            .select("id, status, po_no")
+            .eq("po_no", poNo);
+
+          if (error) throw error;
+          relatedAsns = data || [];
+        }
+
+        let nextPoStatus = "ASN_CREATED";
+
+        if (relatedAsns.length > 0) {
+          const statuses = relatedAsns.map((x: any) =>
+            String(x.status || "").toUpperCase()
+          );
+
+          const hasAnyReceived = statuses.some((s: string) =>
+            ["PARTIAL_RECEIVED", "FULL_RECEIVED", "RECEIVED"].includes(s)
+          );
+
+          const allFullyReceived =
+            statuses.length > 0 &&
+            statuses.every((s: string) =>
+              ["FULL_RECEIVED", "RECEIVED"].includes(s)
+            );
+
+          if (allFullyReceived) {
+            nextPoStatus = "RECEIVED";
+          } else if (hasAnyReceived) {
+            nextPoStatus = "PARTIAL_RECEIVED";
+          } else {
+            nextPoStatus = "ASN_CREATED";
+          }
+        }
+
+        if (poId) {
+          const { error: poUpdateErr } = await sb
+            .from("po_header")
+            .update({
+              status: nextPoStatus,
+            })
+            .eq("id", poId);
+
+          if (poUpdateErr) throw poUpdateErr;
+        } else if (poNo) {
+          const { error: poUpdateErr } = await sb
+            .from("po_header")
+            .update({
+              status: nextPoStatus,
+            })
+            .eq("po_no", poNo);
+
+          if (poUpdateErr) throw poUpdateErr;
+        }
+      }
     }
 
     return NextResponse.json({

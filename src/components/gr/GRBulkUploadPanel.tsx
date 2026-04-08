@@ -132,7 +132,18 @@ export default function GRBulkUploadPanel({ asnId }: Props) {
         </div>
       </div>
 
-      <UploadSummaryCard {...summary} />
+      <UploadSummaryCard
+  title="GR Bulk Upload Summary"
+  headers={[
+    "SKU",
+    "Expected Qty",
+    "Current Received",
+    "Uploaded Qty",
+    "Status",
+    "Message",
+  ]}
+  {...summary}
+/>
 
       <UploadPreviewGrid
         rows={rows}

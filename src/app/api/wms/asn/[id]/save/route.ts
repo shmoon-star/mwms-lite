@@ -38,6 +38,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       .maybeSingle();
 
     if (asnErr) throw asnErr;
+
     if (!asnHeader) {
       return NextResponse.json(
         { ok: false, error: "ASN not found" },
@@ -86,12 +87,12 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const { data: asnLines, error: asnLineErr } = await sb
       .from("asn_line")
-      .select("id, sku, qty_expected, qty")
+ .select("id, sku, qty_expected, qty, qty_received")
       .in("id", asnLineIds);
 
     if (asnLineErr) throw asnLineErr;
 
-    const asnLineMap = new Map((asnLines || []).map((r: any) => [r.id, r]));
+    const asnLineMap = new Map((asnLines || []).map((r: any) => [String(r.id), r]));
 
     const { data: existingGrLines, error: existingErr } = await sb
       .from("gr_line")
@@ -111,12 +112,17 @@ export async function POST(req: NextRequest, context: RouteContext) {
       const asnLineId = String(row?.asn_line_id || "").trim();
       if (!asnLineId) continue;
 
-      const receivedQty = safeNum(row?.received_qty);
-      const asnLine = asnLineMap.get(asnLineId);
+      const receivedQty = safeNum(
+        row?.received_qty ?? row?.qty_received ?? row?.qty
+      );
 
+      const asnLine = asnLineMap.get(asnLineId);
       if (!asnLine) continue;
 
-      const expectedQty = safeNum(asnLine.qty_expected ?? asnLine.qty ?? 0);
+      const expectedQty = safeNum(
+        asnLine.qty ?? asnLine.qty_expected ?? 0
+      );
+
       const existing = existingMap.get(asnLineId);
 
       if (existing) {
@@ -145,14 +151,61 @@ export async function POST(req: NextRequest, context: RouteContext) {
         if (insErr) throw insErr;
       }
 
+      const { error: asnUpdErr } = await sb
+        .from("asn_line")
+        .update({
+          qty_received: receivedQty,
+        })
+        .eq("id", asnLineId);
+
+      if (asnUpdErr) throw asnUpdErr;
+
       savedCount += 1;
     }
+
+    const { data: refreshedLines, error: refreshedErr } = await sb
+      .from("asn_line")
+      .select("qty, qty_expected, qty_received, received_qty")
+      .eq("asn_id", asnId);
+
+    if (refreshedErr) throw refreshedErr;
+
+    const totalExpected = (refreshedLines || []).reduce(
+      (sum: number, row: any) => sum + safeNum(row.qty ?? row.qty_expected ?? 0),
+      0
+    );
+
+    const totalReceived = (refreshedLines || []).reduce(
+      (sum: number, row: any) =>
+        sum + safeNum(row.qty_received ?? row.received_qty ?? 0),
+      0
+    );
+
+    let nextStatus = "OPEN";
+    if (totalReceived > 0 && totalReceived < totalExpected) {
+      nextStatus = "PARTIAL_RECEIVED";
+    }
+    if (totalExpected > 0 && totalReceived >= totalExpected) {
+      nextStatus = "FULL_RECEIVED";
+    }
+
+    const { error: asnHeaderUpdErr } = await sb
+      .from("asn_header")
+      .update({
+        status: nextStatus,
+      })
+      .eq("id", asnId);
+
+    if (asnHeaderUpdErr) throw asnHeaderUpdErr;
 
     return NextResponse.json({
       ok: true,
       gr_id: pendingGr.id,
       gr_no: pendingGr.gr_no,
       saved_count: savedCount,
+      asn_status: nextStatus,
+      total_expected: totalExpected,
+      total_received: totalReceived,
     });
   } catch (e: any) {
     return NextResponse.json(

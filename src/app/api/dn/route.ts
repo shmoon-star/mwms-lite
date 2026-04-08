@@ -7,20 +7,52 @@ function buildDnNo() {
   return `DN-${Date.now()}`;
 }
 
+function safeNum(v: unknown) {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export async function GET() {
   try {
     const supabase = await createClient();
 
-    const { data, error } = await supabase
+    const { data: headers, error: headerError } = await supabase
       .from("dn_header")
-      .select("*")
+      .select("id, dn_no, status, ship_from, ship_to, created_at, confirmed_at")
       .order("created_at", { ascending: false });
 
-    if (error) throw error;
+    if (headerError) throw headerError;
+
+    const dnIds = (headers ?? []).map((row: any) => row.id).filter(Boolean);
+
+    let lineRows: any[] = [];
+    if (dnIds.length > 0) {
+      const { data: lines, error: lineError } = await supabase
+        .from("dn_lines")
+        .select("dn_id, qty_ordered, qty")
+        .in("dn_id", dnIds);
+
+      if (lineError) throw lineError;
+      lineRows = lines ?? [];
+    }
+
+    const qtyMap = new Map<string, number>();
+    for (const line of lineRows) {
+      const dnId = String(line.dn_id || "");
+      if (!dnId) continue;
+
+      const qty = safeNum(line.qty_ordered ?? line.qty);
+      qtyMap.set(dnId, (qtyMap.get(dnId) || 0) + qty);
+    }
+
+    const dns = (headers ?? []).map((row: any) => ({
+      ...row,
+      qty_total: qtyMap.get(String(row.id)) || 0,
+    }));
 
     return NextResponse.json({
       ok: true,
-      dns: data ?? [],
+      dns,
     });
   } catch (e: any) {
     return NextResponse.json(

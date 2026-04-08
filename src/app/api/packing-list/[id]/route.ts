@@ -1,17 +1,21 @@
 // src/app/api/packing-list/[id]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUserProfile, assertUuidVendorAccess } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+type RouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
+
+export async function GET(_req: NextRequest, context: RouteContext) {
   try {
     const sb = await createClient();
     const me = await getCurrentUserProfile();
+    const { id } = await context.params;
 
     const { data: header, error: headerError } = await sb
       .from("packing_list_header")
@@ -25,7 +29,7 @@ export async function GET(
         created_at,
         updated_at
       `)
-      .eq("id", params.id)
+      .eq("id", id)
       .single();
 
     if (headerError || !header) {
@@ -48,7 +52,7 @@ export async function GET(
         carton_no,
         created_at
       `)
-      .eq("packing_list_id", params.id)
+      .eq("packing_list_id", id)
       .order("created_at", { ascending: true });
 
     if (lineError) throw lineError;

@@ -3,18 +3,15 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = {
-  params: Promise<{ poId: string }>;
-};
-
 function buildAsnNo() {
   return `ASN-${Date.now()}`;
 }
 
-export async function POST(_req: NextRequest, ctx: Ctx) {
+export async function POST(req: NextRequest) {
   try {
-    const { poId } = await ctx.params;
     const sb = await createClient();
+    const body = await req.json();
+    const poId = String(body?.poId ?? "").trim();
 
     if (!poId) {
       return NextResponse.json(
@@ -23,7 +20,6 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
       );
     }
 
-    // 1) PO header 조회
     const { data: poHeader, error: poHeaderErr } = await sb
       .from("po_header")
       .select("id, po_no, vendor_id, status, created_at")
@@ -39,7 +35,6 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
       );
     }
 
-    // 2) 기존 ASN 존재 여부 확인
     const { data: existingAsn, error: existingAsnErr } = await sb
       .from("asn_header")
       .select("id, po_id, asn_no, status, created_at")
@@ -75,7 +70,6 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
       );
     }
 
-    // 3) PO line 조회
     const { data: poLines, error: poLinesErr } = await sb
       .from("po_line")
       .select("id, po_id, sku, qty, qty_ordered, created_at")
@@ -91,7 +85,6 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
       );
     }
 
-    // 4) ASN header 생성
     const asnNo = buildAsnNo();
 
     const { data: insertedAsn, error: insertAsnErr } = await sb
@@ -110,7 +103,6 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
       throw new Error("Failed to create ASN header");
     }
 
-    // 5) ASN line 생성
     const asnLinePayload = poLines
       .map((line: any, idx: number) => {
         const ordered = Number(line.qty_ordered ?? 0);
@@ -135,12 +127,10 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
       .insert(asnLinePayload);
 
     if (insertAsnLinesErr) {
-      // header만 남지 않도록 롤백성 정리
       await sb.from("asn_header").delete().eq("id", insertedAsn.id);
       throw insertAsnLinesErr;
     }
 
-    // 6) PO status 업데이트
     const { error: poStatusErr } = await sb
       .from("po_header")
       .update({
