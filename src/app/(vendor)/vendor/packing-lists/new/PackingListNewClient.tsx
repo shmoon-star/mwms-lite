@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type PoOption = {
   id: string;
@@ -56,6 +56,7 @@ function pickPreviewRows(json: PreviewResponse): PreviewRow[] {
 }
 
 export default function PackingListNewClient() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [poOptions, setPoOptions] = useState<PoOption[]>([]);
   const [selectedPoNo, setSelectedPoNo] = useState("");
@@ -377,49 +378,76 @@ export default function PackingListNewClient() {
       >
         <div style={{ fontWeight: 700, marginBottom: 12 }}>Step 2. Upload File</div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            flexWrap: "wrap",
+        {/* 숨겨진 파일 input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.xlsx,.xls"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const picked = e.target.files?.[0] || null;
+            setFile(picked);
+            setPreviewRows([]);
+            setPreviewLoaded(false);
+            setError("");
+            setMessage("");
           }}
-        >
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={(e) => {
-              const picked = e.target.files?.[0] || null;
-              setFile(picked);
-              setPreviewRows([]);
-              setPreviewLoaded(false);
-              setError("");
-              setMessage("");
-            }}
-          />
+        />
 
+        {/* 파일 선택 행 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
           <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            style={fileSelectBtn}
+          >
+            📎 파일 선택
+          </button>
+          <span style={{
+            fontSize: 13,
+            color: file ? "#111827" : "#9ca3af",
+            fontStyle: file ? "normal" : "italic",
+          }}>
+            {file ? file.name : "선택된 파일 없음"}
+          </span>
+        </div>
+
+        {/* 액션 버튼 행 */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
             onClick={handlePreview}
             disabled={loadingPreview || !file || !selectedPoNo}
+            style={{
+              ...actionBtn,
+              background: "#fff",
+              color: "#374151",
+              border: "1px solid #d1d5db",
+              opacity: loadingPreview || !file || !selectedPoNo ? 0.4 : 1,
+              cursor: loadingPreview || !file || !selectedPoNo ? "not-allowed" : "pointer",
+            }}
           >
-            {loadingPreview ? "Previewing..." : "Preview CSV"}
+            {loadingPreview ? "⏳ 미리보기 중..." : "🔍 Preview CSV"}
           </button>
 
           <button
+            type="button"
             onClick={handleUpload}
-            disabled={
-              uploading ||
-              !file ||
-              !selectedPoNo ||
-              !previewLoaded ||
-              previewRows.length === 0
-            }
+            disabled={uploading || !file || !selectedPoNo || !previewLoaded || previewRows.length === 0}
+            style={{
+              ...actionBtn,
+              background: "#111",
+              color: "#fff",
+              border: "none",
+              opacity: uploading || !file || !selectedPoNo || !previewLoaded || previewRows.length === 0 ? 0.4 : 1,
+              cursor: uploading || !file || !selectedPoNo || !previewLoaded || previewRows.length === 0 ? "not-allowed" : "pointer",
+            }}
           >
-            {uploading ? "Creating Draft..." : "Create Draft"}
+            {uploading ? "⏳ 생성 중..." : "✅ Create Draft"}
           </button>
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 13, color: "#666" }}>
+        <div style={{ marginTop: 12, fontSize: 13, color: "#999" }}>
           선택한 PO 기준으로 CSV를 검증하고 Draft를 생성한다.
         </div>
       </div>
@@ -511,6 +539,33 @@ function SummaryCard({ title, value }: { title: string; value: string | number }
     </div>
   );
 }
+
+const fileSelectBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  padding: "7px 16px",
+  border: "1.5px solid #6b7280",
+  borderRadius: 6,
+  background: "#fff",
+  color: "#111827",
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+  flexShrink: 0,
+  boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+};
+
+const actionBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "8px 18px",
+  borderRadius: 6,
+  fontSize: 13,
+  fontWeight: 600,
+};
 
 const th: React.CSSProperties = {
   borderBottom: "1px solid #ddd",

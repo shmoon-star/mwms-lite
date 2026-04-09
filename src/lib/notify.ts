@@ -293,6 +293,63 @@ export async function notifyPackingListSubmitted(params: {
   });
 }
 
+export async function notifyEtaChanged(params: {
+  poNo: string;
+  vendorId: string;
+  oldEta: string | null;
+  newEta: string;
+}) {
+  const vendor = await getVendorInfo(params.vendorId);
+  const recipients = await getVendorRecipients(params.vendorId);
+  const createPackingListUrl = buildCreatePackingListUrl(params.poNo);
+
+  return sendMail({
+    to: recipients,
+    subject: `[mwms-lite] PO 납기예정일(ETA) 변경 안내: ${params.poNo}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+        <p>안녕하세요, ${escapeHtml(vendor.vendor_name || vendor.vendor_code || "")} 담당자님.</p>
+        <p>아래 PO의 납기예정일(ETA)이 변경되었습니다.</p>
+
+        <table style="border-collapse:collapse; margin: 16px 0;">
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">PO No</td>
+            <td style="padding: 8px 0; font-weight: bold;">${escapeHtml(params.poNo)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">Vendor</td>
+            <td style="padding: 8px 0;">${escapeHtml(vendor.vendor_name || "-")}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">변경 전 ETA</td>
+            <td style="padding: 8px 0; text-decoration: line-through; color: #999;">${escapeHtml(params.oldEta || "-")}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">변경 후 ETA</td>
+            <td style="padding: 8px 0; font-weight: bold; color: #111;">${escapeHtml(params.newEta)}</td>
+          </tr>
+        </table>
+
+        <p>변경된 납기일 기준으로 패킹리스트를 등록해 주세요.</p>
+
+        <p style="margin-top: 20px;">
+          <a
+            href="${escapeHtml(createPackingListUrl)}"
+            style="display:inline-block;padding:10px 16px;background:#111;color:#fff;text-decoration:none;border-radius:6px;"
+          >
+            패킹리스트 등록하기
+          </a>
+        </p>
+
+        <p style="margin-top: 12px; font-size: 12px; color: #666;">
+          버튼이 동작하지 않으면 아래 URL을 복사해 주세요:<br />
+          ${escapeHtml(createPackingListUrl)}
+        </p>
+      </div>
+    `,
+  });
+}
+
 export async function notifyAsnCreatedFromPackingList(params: {
   packingListId: string;
   packingListNo: string;

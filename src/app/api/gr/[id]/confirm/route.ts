@@ -39,10 +39,27 @@ function safeNum(v: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
+const REASON_LABELS: Record<string, string> = {
+  SHORTAGE: "Shortage",
+  OVERAGE: "Overage",
+  DEFECT_RETURN: "Quality Defect - Return Pending",
+};
+
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Parse optional body — lineReasons: { [lineId]: reason }
+  let lineReasons: Record<string, string> = {};
+  try {
+    const body = await req.json().catch(() => ({}));
+    if (body?.lineReasons && typeof body.lineReasons === "object") {
+      lineReasons = body.lineReasons;
+    }
+  } catch {
+    // body parsing is optional
+  }
+
   try {
     const { id } = await params;
     const sb = await createClient();
@@ -133,8 +150,10 @@ export async function POST(
       );
     }
 
-    // 2) SKU별 수령 수량 합산
+    // 2) SKU별 수령 수량 합산 + reason 수집
     const receivedBySku = new Map<string, number>();
+    // SKU별로 reason 모음 (한 SKU에 여러 line이 있을 수 있음)
+    const reasonsBySku = new Map<string, Set<string>>();
 
     for (const line of lines) {
       const sku = String(line.sku ?? "").trim();
@@ -143,6 +162,12 @@ export async function POST(
       if (!sku || received <= 0) continue;
 
       receivedBySku.set(sku, (receivedBySku.get(sku) ?? 0) + received);
+
+      const reason = lineReasons[line.id];
+      if (reason) {
+        if (!reasonsBySku.has(sku)) reasonsBySku.set(sku, new Set());
+        reasonsBySku.get(sku)!.add(reason);
+      }
     }
 
     if (receivedBySku.size === 0) {
@@ -201,6 +226,11 @@ export async function POST(
         }
       }
 
+      const skuReasons = reasonsBySku.get(sku);
+      const reasonPart = skuReasons && skuReasons.size > 0
+        ? ` / Reason: ${Array.from(skuReasons).map((r) => REASON_LABELS[r] ?? r).join(", ")}`
+        : "";
+
       const { error: txInsertError } = await sb.from("inventory_tx").insert({
         sku,
         qty: totalReceived,
@@ -209,8 +239,8 @@ export async function POST(
         ref_type: "GR",
         ref_id: header.id,
         note: header.gr_no
-          ? `GR confirm: ${header.gr_no} / SKU ${sku} / qty ${totalReceived}`
-          : `GR confirm / SKU ${sku} / qty ${totalReceived}`,
+          ? `GR confirm: ${header.gr_no} / SKU ${sku} / qty ${totalReceived}${reasonPart}`
+          : `GR confirm / SKU ${sku} / qty ${totalReceived}${reasonPart}`,
         created_at: now,
       });
 

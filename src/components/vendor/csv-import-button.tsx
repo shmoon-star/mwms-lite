@@ -61,12 +61,12 @@ export default function CsvImportButton({
   }
 
   return (
-    <div className="flex flex-col items-start gap-2">
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
       <input
         ref={fileInputRef}
         type="file"
         accept=".csv,text/csv"
-        className="hidden"
+        style={{ display: "none" }}
         onChange={handleFileChange}
       />
 
@@ -74,12 +74,38 @@ export default function CsvImportButton({
         type="button"
         onClick={handleOpenFileDialog}
         disabled={disabled || loading}
-        className="border rounded px-4 py-2"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "7px 16px",
+          border: "1.5px solid #6b7280",
+          borderRadius: 6,
+          background: "#fff",
+          color: "#111827",
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: disabled || loading ? "not-allowed" : "pointer",
+          opacity: disabled || loading ? 0.4 : 1,
+          whiteSpace: "nowrap",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+        }}
       >
-        {loading ? "Importing..." : "Import CSV"}
+        {loading ? "⏳ 가져오는 중..." : "📎 CSV 가져오기"}
       </button>
 
-      {message && <div className="text-sm">{message}</div>}
+      {message && (
+        <div style={{
+          fontSize: 12,
+          padding: "6px 10px",
+          borderRadius: 6,
+          background: message.includes("완료") ? "#f0fdf4" : "#fef2f2",
+          color: message.includes("완료") ? "#166534" : "#991b1b",
+          border: `1px solid ${message.includes("완료") ? "#bbf7d0" : "#fecaca"}`,
+        }}>
+          {message}
+        </div>
+      )}
     </div>
   );
 }

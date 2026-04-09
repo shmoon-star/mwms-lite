@@ -10,6 +10,7 @@ type GrLine = {
   sku: string | null;
   qty_expected: number;
   qty_received: number;
+  variance_reason?: string | null;
 };
 
 type GrDetail = {
@@ -29,6 +30,14 @@ type GrDetailResponse = {
   item?: GrDetail;
   error?: string;
 };
+
+const GR_VARIANCE_REASONS = [
+  { value: "SHORTAGE", label: "Shortage" },
+  { value: "OVERAGE", label: "Overage" },
+  { value: "DEFECT_RETURN", label: "Quality Defect - Return Pending" },
+] as const;
+
+type VarianceReason = (typeof GR_VARIANCE_REASONS)[number]["value"];
 
 function fmtDate(value: string | null) {
   if (!value) return "-";
@@ -74,6 +83,9 @@ export default function GrDetailPage() {
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState("");
 
+  // Variance reason per line: lineId → reason
+  const [lineReasons, setLineReasons] = useState<Record<string, VarianceReason>>({});
+
   async function load() {
     try {
       setLoading(true);
@@ -87,7 +99,21 @@ export default function GrDetailPage() {
         throw new Error(json?.error || "Failed to load GR detail");
       }
 
-      setItem(json.item || null);
+      const fetchedItem = json.item as GrDetail | null;
+      setItem(fetchedItem || null);
+
+      // Pre-populate reasons from WMS key-in (variance_reason already saved in gr_line)
+      if (fetchedItem?.lines) {
+        const preloaded: Record<string, VarianceReason> = {};
+        for (const line of fetchedItem.lines) {
+          if (line.variance_reason) {
+            preloaded[line.id] = line.variance_reason as VarianceReason;
+          }
+        }
+        setLineReasons(preloaded);
+      } else {
+        setLineReasons({});
+      }
     } catch (e: any) {
       setError(e?.message || "Failed to load GR detail");
       setItem(null);
@@ -109,15 +135,16 @@ export default function GrDetailPage() {
     const fullReceipt = expected > 0 && received === expected;
     const partialReceipt = received > 0 && received < expected;
 
-    return {
-      expected,
-      received,
-      shortage,
-      over,
-      fullReceipt,
-      partialReceipt,
-    };
+    return { expected, received, shortage, over, fullReceipt, partialReceipt };
   }, [item]);
+
+  // Lines that have a qty mismatch and need a reason
+  const mismatchedLines = useMemo(
+    () => (item?.lines || []).filter((l) => Number(l.qty_received) !== Number(l.qty_expected)),
+    [item]
+  );
+
+  const allReasonsProvided = mismatchedLines.every((l) => !!lineReasons[l.id]);
 
   async function onConfirm() {
     if (!item) return;
@@ -125,7 +152,12 @@ export default function GrDetailPage() {
 
     const hasReceived = (item.lines || []).some((line) => Number(line.qty_received || 0) > 0);
     if (!hasReceived) {
-      alert("Confirm 전에 qty_received 값이 있는지 먼저 확인해줘.");
+      alert("No received quantities found. Please complete the receiving step first.");
+      return;
+    }
+
+    if (mismatchedLines.length > 0 && !allReasonsProvided) {
+      alert("Please select a variance reason for all lines with quantity discrepancies.");
       return;
     }
 
@@ -135,6 +167,8 @@ export default function GrDetailPage() {
 
       const res = await fetch(`/api/gr/${item.id}/confirm`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineReasons }),
       });
 
       const json = await res.json();
@@ -169,6 +203,7 @@ export default function GrDetailPage() {
   }
 
   const isConfirmed = (item.status || "").toUpperCase() === "CONFIRMED";
+  const hasUnresolved = mismatchedLines.length > 0 && !allReasonsProvided;
 
   return (
     <div className="p-6 space-y-6">
@@ -185,9 +220,7 @@ export default function GrDetailPage() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold">{item.gr_no}</h1>
             <span
-              className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${headerBadgeClass(
-                item.status
-              )}`}
+              className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${headerBadgeClass(item.status)}`}
             >
               {item.status || "-"}
             </span>
@@ -197,10 +230,7 @@ export default function GrDetailPage() {
             <div>
               ASN:{" "}
               {item.asn_id && item.asn_no ? (
-                <Link
-                  href={`/inbound/asn/${item.asn_id}`}
-                  className="text-blue-600 hover:underline"
-                >
+                <Link href={`/inbound/asn/${item.asn_id}`} className="text-blue-600 hover:underline">
                   {item.asn_no}
                 </Link>
               ) : (
@@ -213,30 +243,39 @@ export default function GrDetailPage() {
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="px-3 py-2 rounded-lg border text-sm bg-white"
-          >
-            Refresh
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={isConfirmed || confirming}
-            className={`px-4 py-2 rounded-lg text-sm ${
-              isConfirmed || confirming
-                ? "bg-slate-300 text-white cursor-not-allowed"
-                : "bg-black text-white"
-            }`}
-          >
-            {isConfirmed ? "Confirmed" : confirming ? "Confirming..." : "Confirm"}
-          </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-2">
+            <button onClick={load} className="px-3 py-2 rounded-lg border text-sm bg-white">
+              Refresh
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={isConfirmed || confirming || (!isConfirmed && hasUnresolved)}
+              title={hasUnresolved ? "Select a reason for all quantity discrepancies first" : ""}
+              className={`px-4 py-2 rounded-lg text-sm ${
+                isConfirmed
+                  ? "bg-slate-300 text-white cursor-not-allowed"
+                  : confirming
+                  ? "bg-slate-400 text-white cursor-not-allowed"
+                  : hasUnresolved
+                  ? "bg-slate-300 text-white cursor-not-allowed"
+                  : "bg-black text-white"
+              }`}
+            >
+              {isConfirmed ? "Confirmed" : confirming ? "Confirming..." : "Confirm"}
+            </button>
+          </div>
+          {hasUnresolved && !isConfirmed && (
+            <div className="text-xs text-amber-600">
+              ⚠ Select a reason for all {mismatchedLines.length} mismatched line{mismatchedLines.length > 1 ? "s" : ""}
+            </div>
+          )}
         </div>
       </div>
 
       {message ? (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          {message}
+          ✅ {message}
         </div>
       ) : null}
 
@@ -245,40 +284,43 @@ export default function GrDetailPage() {
           <div className="text-xs text-slate-500">Expected Total</div>
           <div className="text-2xl font-semibold mt-1">{summary.expected}</div>
         </div>
-
         <div className="rounded-xl border p-4 bg-white">
           <div className="text-xs text-slate-500">Received Total</div>
           <div className="text-2xl font-semibold mt-1">{summary.received}</div>
         </div>
-
         <div className="rounded-xl border p-4 bg-white">
           <div className="text-xs text-slate-500">Shortage</div>
           <div className="text-2xl font-semibold mt-1">{summary.shortage}</div>
         </div>
-
         <div className="rounded-xl border p-4 bg-white">
           <div className="text-xs text-slate-500">Over Receipt</div>
           <div className="text-2xl font-semibold mt-1">{summary.over}</div>
         </div>
-
         <div className="rounded-xl border p-4 bg-white">
           <div className="text-xs text-slate-500">Receipt Result</div>
           <div className="text-base font-semibold mt-2">
-            {summary.fullReceipt
-              ? "FULL"
-              : summary.partialReceipt
-              ? "PARTIAL"
-              : "NOT RECEIVED"}
+            {summary.fullReceipt ? "FULL" : summary.partialReceipt ? "PARTIAL" : "NOT RECEIVED"}
           </div>
         </div>
       </div>
 
       <div className="rounded-2xl border bg-white overflow-hidden">
-        <div className="px-4 py-3 border-b bg-slate-50">
-          <div className="font-medium">GR Lines</div>
-          <div className="text-xs text-slate-500 mt-1">
-            CSV 업로드 결과 기준으로 qty_received를 확인하고 Confirm 하면 된다.
+        <div className="px-4 py-3 border-b bg-slate-50 flex items-center justify-between">
+          <div>
+            <div className="font-medium">GR Lines</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {isConfirmed
+                ? "GR has been confirmed."
+                : mismatchedLines.length > 0
+                ? "Select a variance reason for all lines with quantity discrepancies before confirming."
+                : "Review received quantities and confirm."}
+            </div>
           </div>
+          {mismatchedLines.length > 0 && !isConfirmed && (
+            <div className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+              {mismatchedLines.filter((l) => lineReasons[l.id]).length} / {mismatchedLines.length} reasons selected
+            </div>
+          )}
         </div>
 
         <div className="overflow-auto">
@@ -291,6 +333,7 @@ export default function GrDetailPage() {
                 <th className="text-right px-3 py-3 font-medium">Received</th>
                 <th className="text-right px-3 py-3 font-medium">Delta</th>
                 <th className="text-left px-3 py-3 font-medium">Result</th>
+                <th className="text-left px-3 py-3 font-medium">Variance Reason</th>
               </tr>
             </thead>
             <tbody>
@@ -298,30 +341,71 @@ export default function GrDetailPage() {
                 const expected = Number(line.qty_expected || 0);
                 const received = Number(line.qty_received || 0);
                 const delta = received - expected;
+                const hasMismatch = delta !== 0;
+                const result = resultLabel(expected, received);
 
                 return (
                   <tr key={line.id} className="border-b hover:bg-slate-50">
                     <td className="px-3 py-3">{line.line_no}</td>
-                    <td className="px-3 py-3">{line.sku || "-"}</td>
+                    <td className="px-3 py-3 font-mono text-sm">{line.sku || "-"}</td>
                     <td className="px-3 py-3 text-right">{expected}</td>
                     <td className="px-3 py-3 text-right">{received}</td>
-                    <td className="px-3 py-3 text-right">{delta}</td>
+                    <td
+                      className={`px-3 py-3 text-right font-medium ${
+                        delta > 0 ? "text-red-600" : delta < 0 ? "text-amber-600" : "text-slate-400"
+                      }`}
+                    >
+                      {delta > 0 ? `+${delta}` : delta}
+                    </td>
                     <td className="px-3 py-3">
                       <span
-                        className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${resultClass(
-                          expected,
-                          received
-                        )}`}
+                        className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${resultClass(expected, received)}`}
                       >
-                        {resultLabel(expected, received)}
+                        {result}
                       </span>
+                    </td>
+                    <td className="px-3 py-2 min-w-[220px]">
+                      {hasMismatch && !isConfirmed ? (
+                        <div className="space-y-1">
+                          <select
+                            value={lineReasons[line.id] || ""}
+                            onChange={(e) =>
+                              setLineReasons((prev) => ({
+                                ...prev,
+                                [line.id]: e.target.value as VarianceReason,
+                              }))
+                            }
+                            className={`w-full rounded border px-2 py-1 text-xs ${
+                              !lineReasons[line.id]
+                                ? "border-amber-300 bg-amber-50 text-amber-800"
+                                : "border-slate-300 bg-white text-slate-800"
+                            }`}
+                          >
+                            <option value="">— select reason —</option>
+                            {GR_VARIANCE_REASONS.map((r) => (
+                              <option key={r.value} value={r.value}>
+                                {r.label}
+                              </option>
+                            ))}
+                          </select>
+                          {line.variance_reason && line.variance_reason === lineReasons[line.id] && (
+                            <div className="text-xs text-blue-500">↑ pre-filled by WMS</div>
+                          )}
+                        </div>
+                      ) : hasMismatch && lineReasons[line.id] ? (
+                        <span className="text-xs text-slate-600 font-medium">
+                          {GR_VARIANCE_REASONS.find((r) => r.value === lineReasons[line.id])?.label ?? lineReasons[line.id]}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
                     </td>
                   </tr>
                 );
               })}
               {(item.lines || []).length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-3 py-8 text-center text-slate-500">
                     No GR lines found.
                   </td>
                 </tr>

@@ -240,6 +240,27 @@ const expected = n(
       .eq("status", "PENDING")
       .maybeSingle();
 
+    // gr_line에서 asn_line_id → variance_reason 매핑 (pending GR이 있을 때)
+    const grReasonMap = new Map<string, string | null>();
+    if (pendingGr?.id) {
+      const { data: grLines } = await sb
+        .from("gr_line")
+        .select("asn_line_id, variance_reason")
+        .eq("gr_id", pendingGr.id);
+
+      for (const gl of grLines ?? []) {
+        if (gl.asn_line_id) {
+          grReasonMap.set(String(gl.asn_line_id), gl.variance_reason ?? null);
+        }
+      }
+    }
+
+    // lineViews에 variance_reason 포함
+    const lineViewsWithReason = lineViews.map((lv: any) => ({
+      ...lv,
+      variance_reason: grReasonMap.get(lv.asn_line_id) ?? null,
+    }));
+
     return NextResponse.json({
       ok: true,
       asn: {
@@ -251,7 +272,7 @@ const expected = n(
         gr_id: pendingGr?.id ? String(pendingGr.id) : null,
         gr_no: pendingGr?.gr_no || null,
         gr_status: pendingGr?.status || null,
-        lines: lineViews,
+        lines: lineViewsWithReason,
       },
     });
   } catch (e: any) {

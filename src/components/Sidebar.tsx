@@ -10,6 +10,7 @@ const items = [
   { href: "/scm/shipment", label: "Outbound / Shipment" },
   { href: "/inventory", label: "Inventory" },
   { href: "/inventory/ledger", label: "Inventory Ledger" },
+  { href: "/inventory/adjustment", label: "Inventory Adjustment" },
   { href: "/monitor", label: "Monitor" },
 ];
 

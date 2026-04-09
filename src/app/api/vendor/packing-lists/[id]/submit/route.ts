@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { notifyPackingListSubmitted, safeNotify, getVendorInfo} from "@/lib/notify";
+import { validatePlQtyByPo } from "@/lib/pl-qty-validator";
 
 
 export const dynamic = "force-dynamic";
@@ -181,6 +182,22 @@ export async function POST(_req: NextRequest, context: RouteContext) {
         { ok: false, error: "Packing List contains invalid lines" },
         { status: 400 }
       );
+    }
+
+    // ── PO vs PL SKU 수량 검증 ─────────────────────────────────────
+    if (header.po_no) {
+      const validation = await validatePlQtyByPo(supabase, header.po_no, id);
+      if (!validation.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: validation.message,
+            mismatches: validation.mismatches,
+            skuRows: validation.skuRows,
+          },
+          { status: 422 }
+        );
+      }
     }
 
 const { data: updatedHeader, error: updateError } = await supabase

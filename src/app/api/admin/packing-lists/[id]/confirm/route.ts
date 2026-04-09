@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { validatePlQtyByPo } from "@/lib/pl-qty-validator";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -125,6 +126,22 @@ export async function POST(_req: NextRequest, context: RouteContext) {
         { ok: false, error: "Packing list has no lines" },
         { status: 400 }
       );
+    }
+
+    // ── PO vs PL SKU 수량 검증 ─────────────────────────────────────
+    if (header.po_no) {
+      const validation = await validatePlQtyByPo(adminDb, header.po_no, packingListId);
+      if (!validation.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: validation.message,
+            mismatches: validation.mismatches,
+            skuRows: validation.skuRows,
+          },
+          { status: 422 }
+        );
+      }
     }
 
     if (header.asn_id) {

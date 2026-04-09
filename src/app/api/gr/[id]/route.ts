@@ -24,6 +24,7 @@ type GrLineRow = {
   qty_expected: number | null;
   qty_received: number | null;
   qty: number | null;
+  variance_reason: string | null;
 };
 
 type AsnHeaderRow = {
@@ -85,7 +86,7 @@ export async function GET(_req: Request, context: RouteContext) {
 
     const { data: lineRowsRaw, error: lineErr } = await sb
       .from("gr_line")
-      .select("id, gr_id, asn_line_id, sku, qty_expected, qty_received, qty")
+      .select("id, gr_id, asn_line_id, sku, qty_expected, qty_received, qty, variance_reason")
       .eq("gr_id", id)
       .order("id", { ascending: true });
 
@@ -141,6 +142,7 @@ export async function GET(_req: Request, context: RouteContext) {
         qty_received: receivedQty,
         delta,
         result,
+        variance_reason: row.variance_reason ?? null,
       };
     });
 

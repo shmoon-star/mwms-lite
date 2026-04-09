@@ -95,10 +95,33 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function PackingListDetailClient({ id }: { id: string }) {
+  type SkuRow = { sku: string; po_qty: number; pl_qty: number };
+
+  type ReasonDetail = {
+    reason: string;
+    label: string;
+    expected_qty: number;
+    received_qty: number;
+    delta: number;
+  };
+
+  type GrRemark = {
+    sku: string;
+    asn_qty: number;
+    received_qty: number;
+    delta: number;
+    result: string;
+    reason_details: ReasonDetail[];
+    gr_nos: string[];
+  };
+
   const [data, setData] = useState<PackingListDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [mismatchSkuRows, setMismatchSkuRows] = useState<SkuRow[] | null>(null);
   const [actionLoading, setActionLoading] = useState<"" | "submit" | "finalize">("");
+  const [grRemarks, setGrRemarks] = useState<GrRemark[] | null>(null);
+  const [grHasDiscrepancy, setGrHasDiscrepancy] = useState(false);
 
   async function load() {
     try {
@@ -116,6 +139,26 @@ export default function PackingListDetailClient({ id }: { id: string }) {
       }
 
       setData(json);
+
+      // GR remarks — fetch only when ASN exists (status past SUBMITTED)
+      const statusUpper = String(json?.header?.status || "").toUpperCase();
+      if (
+        statusUpper === "CONFIRMED" ||
+        statusUpper === "INBOUND_COMPLETED" ||
+        statusUpper === "FINALIZED"
+      ) {
+        const remarksRes = await fetch(`/api/vendor/packing-lists/${id}/gr-remarks`, {
+          cache: "no-store",
+        });
+        const remarksJson = remarksRes.ok ? await remarksRes.json() : null;
+        if (remarksJson?.ok && remarksJson.remarks?.length > 0) {
+          setGrRemarks(remarksJson.remarks);
+          setGrHasDiscrepancy(remarksJson.has_discrepancy ?? false);
+        } else {
+          setGrRemarks(null);
+          setGrHasDiscrepancy(false);
+        }
+      }
     } catch (e: any) {
       setError(e?.message || "Failed to load packing list");
     } finally {
@@ -127,6 +170,7 @@ export default function PackingListDetailClient({ id }: { id: string }) {
     try {
       setActionLoading("submit");
       setError("");
+      setMismatchSkuRows(null);
 
       const res = await fetch(`/api/vendor/packing-lists/${id}/submit`, {
         method: "POST",
@@ -135,6 +179,10 @@ export default function PackingListDetailClient({ id }: { id: string }) {
       const json = await res.json();
 
       if (!res.ok || !json?.ok) {
+        // 수량 불일치(422) 시 SKU 비교 데이터 저장
+        if (res.status === 422 && json?.skuRows) {
+          setMismatchSkuRows(json.skuRows);
+        }
         throw new Error(json?.error || "Failed to submit packing list");
       }
 
@@ -289,6 +337,50 @@ export default function PackingListDetailClient({ id }: { id: string }) {
         </div>
       ) : null}
 
+      {/* SKU 수량 불일치 테이블 */}
+      {mismatchSkuRows && mismatchSkuRows.length > 0 && (
+        <div className="rounded-xl border border-red-200 overflow-hidden">
+          <div className="bg-red-50 px-4 py-3 font-semibold text-red-800 border-b border-red-200">
+            발주수량 vs 포장수량 비교
+          </div>
+          <table className="w-full text-sm border-collapse">
+            <thead className="bg-red-50 text-red-800">
+              <tr>
+                <th className="px-4 py-2 text-left">SKU</th>
+                <th className="px-4 py-2 text-right">발주 수량 (PO)</th>
+                <th className="px-4 py-2 text-right">포장 수량 (PL)</th>
+                <th className="px-4 py-2 text-right">차이</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mismatchSkuRows.map((row) => {
+                const diff = row.pl_qty - row.po_qty;
+                const mismatch = diff !== 0;
+                return (
+                  <tr
+                    key={row.sku}
+                    className={`border-t border-red-100 ${mismatch ? "bg-red-50" : "bg-white"}`}
+                  >
+                    <td className="px-4 py-2">{row.sku}</td>
+                    <td className="px-4 py-2 text-right">{row.po_qty}</td>
+                    <td className={`px-4 py-2 text-right ${mismatch ? "text-red-700 font-bold" : ""}`}>
+                      {row.pl_qty}
+                    </td>
+                    <td
+                      className={`px-4 py-2 text-right font-semibold ${
+                        diff > 0 ? "text-amber-700" : diff < 0 ? "text-red-700" : "text-green-700"
+                      }`}
+                    >
+                      {diff > 0 ? `+${diff}` : diff}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-4">
         <div className="rounded-2xl border p-6">
           <div className="text-sm text-gray-500">Total Cartons</div>
@@ -307,6 +399,97 @@ export default function PackingListDetailClient({ id }: { id: string }) {
           <div className="mt-3 text-4xl font-bold">{summary.balance_qty}</div>
         </div>
       </div>
+
+      {/* GR Receipt Summary — shown to vendor after GR confirmed */}
+      {grRemarks && grRemarks.length > 0 && (
+        <div className={`overflow-hidden rounded-2xl border ${grHasDiscrepancy ? "border-amber-200" : "border-green-200"}`}>
+          <div className={`px-6 py-4 flex items-center justify-between ${grHasDiscrepancy ? "bg-amber-50" : "bg-green-50"}`}>
+            <div>
+              <div className={`text-lg font-semibold ${grHasDiscrepancy ? "text-amber-800" : "text-green-800"}`}>
+                GR Receipt Summary
+              </div>
+              <div className={`text-sm mt-0.5 ${grHasDiscrepancy ? "text-amber-600" : "text-green-600"}`}>
+                {grHasDiscrepancy
+                  ? "Some items have quantity discrepancies. Please review the remarks below."
+                  : "All items received as expected."}
+              </div>
+            </div>
+            <span
+              className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold border ${
+                grHasDiscrepancy
+                  ? "bg-amber-100 text-amber-800 border-amber-200"
+                  : "bg-green-100 text-green-800 border-green-200"
+              }`}
+            >
+              {grHasDiscrepancy ? "Discrepancy" : "Full Match"}
+            </span>
+          </div>
+
+          <table className="w-full text-sm border-collapse">
+            <thead className={grHasDiscrepancy ? "bg-amber-50" : "bg-green-50"}>
+              <tr className="border-t">
+                <th className="px-4 py-3 text-left font-medium">SKU</th>
+                <th className="px-4 py-3 text-right font-medium">Packed Qty</th>
+                <th className="px-4 py-3 text-right font-medium">Received Qty</th>
+                <th className="px-4 py-3 text-right font-medium">Delta</th>
+                <th className="px-4 py-3 text-left font-medium">Result</th>
+                <th className="px-4 py-3 text-left font-medium">Variance Remark</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grRemarks.map((row) => (
+                <tr key={row.sku} className={`border-t ${row.delta !== 0 ? "bg-amber-50/40" : ""}`}>
+                  <td className="px-4 py-3 font-mono">{row.sku}</td>
+                  <td className="px-4 py-3 text-right">{row.asn_qty}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{row.received_qty}</td>
+                  <td
+                    className={`px-4 py-3 text-right font-semibold ${
+                      row.delta < 0 ? "text-red-600" : row.delta > 0 ? "text-amber-600" : "text-green-600"
+                    }`}
+                  >
+                    {row.delta > 0 ? `+${row.delta}` : row.delta === 0 ? "—" : row.delta}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium border ${
+                        row.result === "MATCH"
+                          ? "bg-green-100 text-green-700 border-green-200"
+                          : row.result === "SHORT"
+                          ? "bg-amber-100 text-amber-700 border-amber-200"
+                          : "bg-red-100 text-red-700 border-red-200"
+                      }`}
+                    >
+                      {row.result}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.reason_details.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {row.reason_details.map((rd, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
+                              {rd.label}
+                            </span>
+                            <span
+                              className={`text-xs font-bold tabular-nums ${
+                                rd.delta < 0 ? "text-red-600" : rd.delta > 0 ? "text-amber-600" : "text-green-600"
+                              }`}
+                            >
+                              {rd.delta > 0 ? `+${rd.delta}` : rd.delta}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-2xl border">
         <div className="border-b px-6 py-4 text-2xl font-semibold">

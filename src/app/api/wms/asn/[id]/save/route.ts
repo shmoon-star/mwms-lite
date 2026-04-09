@@ -125,6 +125,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
       const existing = existingMap.get(asnLineId);
 
+      const varianceReason = String(row?.variance_reason ?? "").trim() || null;
+
       if (existing) {
         const { error: updErr } = await sb
           .from("gr_line")
@@ -132,6 +134,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
             qty_expected: expectedQty,
             qty_received: receivedQty,
             qty: receivedQty,
+            variance_reason: varianceReason,
           })
           .eq("id", existing.id);
 
@@ -146,6 +149,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
             qty_expected: expectedQty,
             qty_received: receivedQty,
             qty: receivedQty,
+            variance_reason: varianceReason,
           });
 
         if (insErr) throw insErr;
@@ -165,7 +169,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const { data: refreshedLines, error: refreshedErr } = await sb
       .from("asn_line")
-      .select("qty, qty_expected, qty_received, received_qty")
+      .select("qty, qty_expected, qty_received")
       .eq("asn_id", asnId);
 
     if (refreshedErr) throw refreshedErr;
@@ -177,7 +181,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const totalReceived = (refreshedLines || []).reduce(
       (sum: number, row: any) =>
-        sum + safeNum(row.qty_received ?? row.received_qty ?? 0),
+        sum + safeNum(row.qty_received ?? 0),
       0
     );
 

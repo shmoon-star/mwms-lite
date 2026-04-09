@@ -15,7 +15,10 @@ type POData = {
   id: string;
   po_no: string | null;
   vendor: string | null;
+  vendor_id: string | null;
+  vendor_name: string | null;
   status: string | null;
+  eta: string | null;
   created_at: string | null;
   lines: POLine[];
 };
@@ -32,6 +35,12 @@ export default function PODetailClient({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+
+  // ETA 수정 상태
+  const [etaEditing, setEtaEditing] = useState(false);
+  const [etaInput, setEtaInput] = useState("");
+  const [etaSaving, setEtaSaving] = useState(false);
+  const [etaResult, setEtaResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   async function load() {
     try {
@@ -65,10 +74,10 @@ export default function PODetailClient({ id }: { id: string }) {
         throw new Error(poJson?.error || "Failed to load PO detail");
       }
 
-      setPo({
-        ...poJson.po,
-        lines: poJson.po?.lines ?? [],
-      });
+      const poData = { ...poJson.po, lines: poJson.po?.lines ?? [] };
+      setPo(poData);
+      // ETA 초기값 세팅
+      setEtaInput(poData.eta ?? "");
 
       if (asnRes.ok && asnJson?.ok && asnJson?.asn) {
         setExistingAsn(asnJson.asn);
@@ -144,6 +153,122 @@ export default function PODetailClient({ id }: { id: string }) {
     } finally {
       setWorking(false);
     }
+  }
+
+  async function handleEtaSave() {
+    if (!po || !etaInput) return;
+
+    setEtaSaving(true);
+    setEtaResult(null);
+
+    try {
+      const res = await fetch(`/api/po/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eta: etaInput }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || json?.ok === false) {
+        setEtaResult({ type: "error", message: json?.error ?? "수정 실패" });
+        return;
+      }
+
+      setPo((prev) => prev ? { ...prev, eta: json.new_eta } : prev);
+      setEtaEditing(false);
+      setEtaResult({
+        type: "success",
+        message: `ETA 변경 완료: ${json.old_eta ?? "-"} → ${json.new_eta}${po.vendor_id ? " (벤더 이메일 발송됨)" : ""}`,
+      });
+    } catch (e: unknown) {
+      setEtaResult({ type: "error", message: e instanceof Error ? e.message : "오류 발생" });
+    } finally {
+      setEtaSaving(false);
+    }
+  }
+
+  function renderEtaSection() {
+    if (!po) return null;
+
+    return (
+      <div style={etaBox}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <span style={etaLabel}>ETA (납기예정일)</span>
+            {!etaEditing && (
+              <span style={etaValue}>{po.eta ?? "미설정"}</span>
+            )}
+          </div>
+
+          {!etaEditing ? (
+            <button
+              type="button"
+              onClick={() => {
+                setEtaInput(po.eta ?? "");
+                setEtaEditing(true);
+                setEtaResult(null);
+              }}
+              style={editBtn}
+            >
+              ✏️ ETA 수정
+            </button>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <input
+                type="date"
+                value={etaInput}
+                onChange={(e) => setEtaInput(e.target.value)}
+                style={dateInput}
+              />
+              <button
+                type="button"
+                onClick={handleEtaSave}
+                disabled={etaSaving || !etaInput}
+                style={{
+                  ...saveBtn,
+                  opacity: etaSaving || !etaInput ? 0.4 : 1,
+                  cursor: etaSaving || !etaInput ? "not-allowed" : "pointer",
+                }}
+              >
+                {etaSaving ? "저장 중..." : "저장"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEtaEditing(false);
+                  setEtaResult(null);
+                  setEtaInput(po.eta ?? "");
+                }}
+                style={cancelBtn}
+              >
+                취소
+              </button>
+            </div>
+          )}
+        </div>
+
+        {etaEditing && (
+          <div style={{ marginTop: 6, fontSize: 12, color: "#9ca3af" }}>
+            저장 시 벤더에게 ETA 변경 이메일이 자동으로 발송됩니다.
+          </div>
+        )}
+
+        {etaResult && (
+          <div style={{
+            marginTop: 8,
+            padding: "8px 12px",
+            borderRadius: 6,
+            fontSize: 13,
+            background: etaResult.type === "success" ? "#f0fdf4" : "#fef2f2",
+            color: etaResult.type === "success" ? "#166534" : "#991b1b",
+            border: `1px solid ${etaResult.type === "success" ? "#bbf7d0" : "#fecaca"}`,
+          }}>
+            {etaResult.type === "success" ? "✅ " : "❌ "}{etaResult.message}
+          </div>
+        )}
+      </div>
+    );
   }
 
   function renderActionArea() {
@@ -231,11 +356,16 @@ export default function PODetailClient({ id }: { id: string }) {
         <b>Vendor:</b> {po.vendor ?? "-"}
       </div>
       <div style={{ marginBottom: 4 }}>
+        <b>Vendor:</b> {po.vendor_name ?? po.vendor ?? "-"}
+      </div>
+      <div style={{ marginBottom: 4 }}>
         <b>Status:</b> {statusLabel}
       </div>
       <div style={{ marginBottom: 16 }}>
         <b>Created At:</b> {po.created_at ?? "-"}
       </div>
+
+      {renderEtaSection()}
 
       {renderActionArea()}
 
@@ -266,6 +396,72 @@ export default function PODetailClient({ id }: { id: string }) {
     </div>
   );
 }
+
+const etaBox: React.CSSProperties = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 8,
+  padding: "14px 16px",
+  marginBottom: 20,
+  background: "#fff",
+};
+
+const etaLabel: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  color: "#6b7280",
+  display: "block",
+  marginBottom: 4,
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+};
+
+const etaValue: React.CSSProperties = {
+  fontSize: 18,
+  fontWeight: 700,
+  color: "#111",
+};
+
+const editBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  padding: "6px 12px",
+  border: "1px solid #d1d5db",
+  borderRadius: 6,
+  background: "#fff",
+  color: "#374151",
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: "pointer",
+};
+
+const dateInput: React.CSSProperties = {
+  padding: "7px 10px",
+  border: "1.5px solid #6b7280",
+  borderRadius: 6,
+  fontSize: 14,
+  color: "#111",
+};
+
+const saveBtn: React.CSSProperties = {
+  padding: "7px 16px",
+  border: "none",
+  borderRadius: 6,
+  background: "#111",
+  color: "#fff",
+  fontSize: 13,
+  fontWeight: 600,
+};
+
+const cancelBtn: React.CSSProperties = {
+  padding: "7px 14px",
+  border: "1px solid #d1d5db",
+  borderRadius: 6,
+  background: "#fff",
+  color: "#6b7280",
+  fontSize: 13,
+  cursor: "pointer",
+};
 
 const th: React.CSSProperties = {
   border: "1px solid #ddd",
