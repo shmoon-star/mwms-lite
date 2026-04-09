@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import POUploadPanel from "./POUploadPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -172,92 +173,7 @@ qtyMap = (poLineRows || []).reduce((map, row: any) => {
 
   return (
     <div style={{ padding: 20 }}>
-      <div
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          padding: 16,
-          marginBottom: 20,
-          background: "#fafafa",
-        }}
-      >
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>
-          PO Upload / Template
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 16,
-            marginBottom: 16,
-          }}
-        >
-          <div style={card}>
-            <div style={cardTitle}>PO Header CSV</div>
-            <div style={hint}>Header 업로드 먼저 진행</div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                marginTop: 10,
-              }}
-            >
-              <a href="/api/po/template-header" style={button}>
-                Download Header Template
-              </a>
-            </div>
-
-            <form
-              action="/api/po/upload-header"
-              method="post"
-              encType="multipart/form-data"
-              style={{ marginTop: 12 }}
-            >
-              <input type="file" name="file" accept=".csv" required />
-              <button type="submit" style={{ ...button, marginLeft: 8 }}>
-                Upload Header CSV
-              </button>
-            </form>
-          </div>
-
-          <div style={card}>
-            <div style={cardTitle}>PO Line CSV</div>
-            <div style={hint}>Header 생성 후 Line 업로드 진행</div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                marginTop: 10,
-              }}
-            >
-              <a href="/api/po/template-lines" style={button}>
-                Download Line Template
-              </a>
-            </div>
-
-            <form
-              action="/api/po/lines/upload"
-              method="post"
-              encType="multipart/form-data"
-              style={{ marginTop: 12 }}
-            >
-              <input type="file" name="file" accept=".csv" required />
-              <button type="submit" style={{ ...button, marginLeft: 8 }}>
-                Upload Line CSV
-              </button>
-            </form>
-          </div>
-        </div>
-
-        <div style={hint}>
-          순서: Header CSV 업로드 → Line CSV 업로드 → PO 상세 확인
-        </div>
-      </div>
+      <POUploadPanel />
 
       <div
         style={{
@@ -452,21 +368,4 @@ const button: React.CSSProperties = {
   textDecoration: "none",
   fontSize: 14,
   cursor: "pointer",
-};
-
-const card: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 8,
-  padding: 12,
-  background: "#fff",
-};
-
-const cardTitle: React.CSSProperties = {
-  fontWeight: 700,
-  marginBottom: 6,
-};
-
-const hint: React.CSSProperties = {
-  fontSize: 12,
-  color: "#666",
 };
