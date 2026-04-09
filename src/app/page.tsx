@@ -1,5 +1,6 @@
 async function getProducts() {
-  const res = await fetch("http://localhost:3000/api/products", { cache: "no-store" });
+  const base = (process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+  const res = await fetch(`${base}/api/products`, { cache: "no-store" });
   return res.json();
 }
 
