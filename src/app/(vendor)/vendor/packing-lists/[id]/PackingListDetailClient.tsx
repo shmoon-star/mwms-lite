@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type PackingListLine = {
   id: string;
@@ -124,6 +124,13 @@ export default function PackingListDetailClient({ id }: { id: string }) {
   const [grRemarks, setGrRemarks] = useState<GrRemark[] | null>(null);
   const [grHasDiscrepancy, setGrHasDiscrepancy] = useState(false);
 
+  // 첨부파일
+  type VendorDoc = { id: string; file_name: string; file_size: number | null; mime_type: string | null; uploaded_at: string | null };
+  const [docs, setDocs] = useState<VendorDoc[]>([]);
+  const [docUploading, setDocUploading] = useState(false);
+  const [docError, setDocError] = useState("");
+  const docInputRef = useRef<HTMLInputElement>(null);
+
   async function load() {
     try {
       setLoading(true);
@@ -228,8 +235,50 @@ export default function PackingListDetailClient({ id }: { id: string }) {
     }
   }
 
+  async function loadDocs() {
+    const res = await fetch(`/api/vendor/packing-lists/${id}/documents`, { cache: "no-store" });
+    const json = await res.json();
+    if (json?.ok) setDocs(json.documents ?? []);
+  }
+
+  async function handleDocUpload(file: File) {
+    try {
+      setDocUploading(true);
+      setDocError("");
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/vendor/packing-lists/${id}/documents`, { method: "POST", body: fd });
+      const json = await res.json();
+      if (!json?.ok) throw new Error(json?.error || "Upload failed");
+      await loadDocs();
+    } catch (e: any) {
+      setDocError(e?.message || "Upload failed");
+    } finally {
+      setDocUploading(false);
+    }
+  }
+
+  async function handleDocDelete(docId: string) {
+    if (!confirm("이 파일을 삭제하시겠습니까?")) return;
+    const res = await fetch(`/api/vendor/packing-lists/${id}/documents/${docId}`, { method: "DELETE" });
+    const json = await res.json();
+    if (json?.ok) setDocs((prev) => prev.filter((d) => d.id !== docId));
+  }
+
+  async function handleDocDownload(docId: string, fileName: string) {
+    const res = await fetch(`/api/vendor/packing-lists/${id}/documents/${docId}`);
+    const json = await res.json();
+    if (!json?.ok || !json.url) return;
+    const a = document.createElement("a");
+    a.href = json.url;
+    a.download = fileName;
+    a.target = "_blank";
+    a.click();
+  }
+
   useEffect(() => {
     load();
+    loadDocs();
   }, [id]);
 
   if (loading) {
@@ -563,6 +612,86 @@ export default function PackingListDetailClient({ id }: { id: string }) {
           </table>
         </div>
       )}
+
+      {/* 첨부파일 */}
+      <div className="overflow-hidden rounded-2xl border">
+        <div className="border-b px-6 py-4 flex items-center justify-between">
+          <div>
+            <div className="text-lg font-semibold">첨부파일</div>
+            <div className="text-xs text-gray-400 mt-0.5">인보이스, BL, 서류 등 추가 파일을 업로드하세요</div>
+          </div>
+          <div className="flex items-center gap-2">
+            {docUploading && <span className="text-xs text-gray-400">업로드 중...</span>}
+            <input
+              ref={docInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleDocUpload(f);
+                e.target.value = "";
+              }}
+            />
+            <button
+              onClick={() => docInputRef.current?.click()}
+              disabled={docUploading}
+              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              + 파일 추가
+            </button>
+          </div>
+        </div>
+
+        {docError && (
+          <div className="px-6 py-2 text-sm text-red-600 bg-red-50">{docError}</div>
+        )}
+
+        {docs.length === 0 ? (
+          <div className="px-6 py-8 text-center text-sm text-gray-400">
+            업로드된 파일이 없습니다
+          </div>
+        ) : (
+          <table className="w-full text-sm border-collapse">
+            <thead className="bg-gray-50 text-left">
+              <tr>
+                <th className="px-6 py-3 font-medium text-gray-600">파일명</th>
+                <th className="px-6 py-3 font-medium text-gray-600">크기</th>
+                <th className="px-6 py-3 font-medium text-gray-600">업로드 일시</th>
+                <th className="px-6 py-3 font-medium text-gray-600 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {docs.map((doc) => (
+                <tr key={doc.id} className="border-t hover:bg-gray-50">
+                  <td className="px-6 py-3 font-medium text-gray-800">{doc.file_name}</td>
+                  <td className="px-6 py-3 text-gray-500">
+                    {doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : "-"}
+                  </td>
+                  <td className="px-6 py-3 text-gray-500">
+                    {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleString("ko-KR") : "-"}
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => handleDocDownload(doc.id, doc.file_name)}
+                        className="rounded border px-3 py-1 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                      >
+                        다운로드
+                      </button>
+                      <button
+                        onClick={() => handleDocDelete(doc.id)}
+                        className="rounded border px-3 py-1 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       <div className="overflow-hidden rounded-2xl border">
         <div className="border-b px-6 py-4 text-2xl font-semibold">

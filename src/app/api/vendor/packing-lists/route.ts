@@ -172,6 +172,19 @@ export async function GET(_req: NextRequest) {
       );
     }
 
+    // 첨부파일 수 조회
+    const plIds = headerRows.map((r) => r.id);
+    let docCountMap = new Map<string, number>();
+    if (plIds.length > 0) {
+      const { data: docCounts } = await supabase
+        .from("vendor_documents")
+        .select("pl_id")
+        .in("pl_id", plIds);
+      for (const row of docCounts ?? []) {
+        docCountMap.set(row.pl_id, (docCountMap.get(row.pl_id) ?? 0) + 1);
+      }
+    }
+
     const items = headerRows.map((row) => {
       const vendor = row.vendor_id ? vendorMap.get(row.vendor_id) ?? null : null;
       const po = row.po_no ? poMap.get(row.po_no) ?? null : null;
@@ -194,6 +207,7 @@ export async function GET(_req: NextRequest) {
         updated_at: row.updated_at,
         finalized_at: row.finalized_at ?? null,
         is_vendor_scope: isVendorUser,
+        doc_count: docCountMap.get(row.id) ?? 0,
       };
     });
 

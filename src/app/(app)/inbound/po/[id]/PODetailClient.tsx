@@ -36,6 +36,9 @@ export default function PODetailClient({ id }: { id: string }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
 
+  type VendorDoc = { id: string; pl_id: string; pl_no: string | null; pl_status: string | null; file_name: string; file_size: number | null; mime_type: string | null; uploaded_at: string | null; storage_path?: string };
+  const [docs, setDocs] = useState<VendorDoc[]>([]);
+
   // ETA 수정 상태
   const [etaEditing, setEtaEditing] = useState(false);
   const [etaInput, setEtaInput] = useState("");
@@ -91,8 +94,30 @@ export default function PODetailClient({ id }: { id: string }) {
     }
   }
 
+  async function loadDocs() {
+    const res = await fetch(`/api/scm/po/${id}/documents`, { cache: "no-store" });
+    const json = await res.json();
+    if (json?.ok) setDocs(json.documents ?? []);
+  }
+
+  async function handleDocDownload(storagePath: string, fileName: string) {
+    const res = await fetch(`/api/scm/po/${id}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storage_path: storagePath, file_name: fileName }),
+    });
+    const json = await res.json();
+    if (!json?.ok || !json.url) return;
+    const a = document.createElement("a");
+    a.href = json.url;
+    a.download = fileName;
+    a.target = "_blank";
+    a.click();
+  }
+
   useEffect(() => {
     load();
+    loadDocs();
   }, [id]);
 
   const statusLabel = useMemo(() => {
@@ -393,6 +418,55 @@ export default function PODetailClient({ id }: { id: string }) {
           ))}
         </tbody>
       </table>
+
+      {/* 벤더 첨부파일 */}
+      <div style={{ marginTop: 32, border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #e5e7eb", background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>벤더 첨부파일</div>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>벤더가 업로드한 인보이스, BL, 서류 등</div>
+          </div>
+          <button onClick={loadDocs} style={{ fontSize: 12, color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 6, padding: "4px 10px", background: "#fff", cursor: "pointer" }}>새로고침</button>
+        </div>
+
+        {docs.length === 0 ? (
+          <div style={{ padding: "24px 20px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>
+            업로드된 첨부파일이 없습니다
+          </div>
+        ) : (
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                <th style={th}>파일명</th>
+                <th style={th}>PL No</th>
+                <th style={th}>크기</th>
+                <th style={th}>업로드 일시</th>
+                <th style={{ ...th, textAlign: "right" }}>다운로드</th>
+              </tr>
+            </thead>
+            <tbody>
+              {docs.map((doc) => (
+                <tr key={doc.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                  <td style={td}>{doc.file_name}</td>
+                  <td style={td}>{doc.pl_no ?? "-"}</td>
+                  <td style={td}>{doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : "-"}</td>
+                  <td style={td}>{doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleString("ko-KR") : "-"}</td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    {doc.storage_path && (
+                      <button
+                        onClick={() => handleDocDownload(doc.storage_path!, doc.file_name)}
+                        style={{ fontSize: 12, color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "3px 10px", background: "#eff6ff", cursor: "pointer" }}
+                      >
+                        다운로드
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

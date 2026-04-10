@@ -161,6 +161,10 @@ export default function InboundAsnV2Page() {
   const [allDetailsLoading, setAllDetailsLoading] = useState(false);
   const [allDetailsError, setAllDetailsError] = useState<string>("");
 
+  type VendorDoc = { id: string; file_name: string; file_size: number | null; uploaded_at: string | null; storage_path?: string };
+  const [vendorDocs, setVendorDocs] = useState<VendorDoc[]>([]);
+  const [vendorDocsLoading, setVendorDocsLoading] = useState(false);
+
   async function loadList() {
     try {
       setLoading(true);
@@ -273,14 +277,49 @@ export default function InboundAsnV2Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceTypeFilter, computedStatusFilter, keyword]);
 
+  async function loadVendorDocs(plId: string) {
+    try {
+      setVendorDocsLoading(true);
+      const res = await fetch(`/api/vendor/packing-lists/${plId}/documents`, { cache: "no-store" });
+      const json = await res.json();
+      setVendorDocs(json?.ok ? (json.documents ?? []) : []);
+    } finally {
+      setVendorDocsLoading(false);
+    }
+  }
+
+  async function handleDocDownload(storagePath: string, fileName: string) {
+    const res = await fetch(`/api/scm/vendor-documents/signed-url`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ storage_path: storagePath, file_name: fileName }),
+    });
+    const json = await res.json();
+    if (!json?.ok || !json.url) return;
+    const a = document.createElement("a");
+    a.href = json.url;
+    a.download = fileName;
+    a.target = "_blank";
+    a.click();
+  }
+
   useEffect(() => {
     if (selectedId) {
       loadDetail(selectedId);
     } else {
       setDetail(null);
       setDetailError("");
+      setVendorDocs([]);
     }
   }, [selectedId]);
+
+  useEffect(() => {
+    if (detail?.source_type === "PACKING_LIST" && detail?.source_id) {
+      loadVendorDocs(detail.source_id);
+    } else {
+      setVendorDocs([]);
+    }
+  }, [detail]);
 
   const filteredItems = useMemo(() => {
     const q = keyword.trim().toLowerCase();
@@ -832,6 +871,62 @@ export default function InboundAsnV2Page() {
                 </tbody>
               </table>
             </div>
+
+            {/* 벤더 첨부파일 */}
+            {detail.source_type === "PACKING_LIST" && (
+              <div className="border rounded overflow-hidden">
+                <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+                  <div>
+                    <span className="font-medium text-sm">벤더 첨부파일</span>
+                    <span className="ml-2 text-xs text-gray-400">거래명세서, BL, 인보이스 등</span>
+                  </div>
+                  {vendorDocs.length > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                      📎 {vendorDocs.length}
+                    </span>
+                  )}
+                </div>
+                {vendorDocsLoading ? (
+                  <div className="p-4 text-xs text-gray-400">로딩 중...</div>
+                ) : vendorDocs.length === 0 ? (
+                  <div className="p-4 text-xs text-gray-400 text-center">첨부파일 없음</div>
+                ) : (
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-xs">
+                      <tr>
+                        <th className="text-left px-4 py-2 border-b">파일명</th>
+                        <th className="text-left px-4 py-2 border-b">크기</th>
+                        <th className="text-left px-4 py-2 border-b">업로드 일시</th>
+                        <th className="text-right px-4 py-2 border-b">다운로드</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vendorDocs.map((doc) => (
+                        <tr key={doc.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 border-b font-medium">{doc.file_name}</td>
+                          <td className="px-4 py-2 border-b text-gray-500">
+                            {doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : "-"}
+                          </td>
+                          <td className="px-4 py-2 border-b text-gray-500">
+                            {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleString("ko-KR") : "-"}
+                          </td>
+                          <td className="px-4 py-2 border-b text-right">
+                            {doc.storage_path && (
+                              <button
+                                onClick={() => handleDocDownload(doc.storage_path!, doc.file_name)}
+                                className="text-xs text-blue-600 border border-blue-200 rounded px-2 py-1 hover:bg-blue-50"
+                              >
+                                다운로드
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

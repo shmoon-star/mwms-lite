@@ -21,6 +21,7 @@ type PackingListItem = {
   updated_at: string | null;
   finalized_at: string | null;
   is_vendor_scope: boolean;
+  doc_count: number;
 };
 
 type ApiResponse = {
@@ -169,6 +170,7 @@ export default function VendorPackingListsPage() {
                 <th className="px-4 py-4">Status</th>
                 <th className="px-4 py-4">ASN</th>
                 <th className="px-4 py-4">ETA</th>
+                <th className="px-4 py-4">Files</th>
                 <th className="px-4 py-4">Created At</th>
                 <th className="px-4 py-4">Finalized At</th>
                 <th className="px-4 py-4">Action</th>
@@ -179,7 +181,7 @@ export default function VendorPackingListsPage() {
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={scope === "ADMIN" ? 9 : 8}
+                    colSpan={scope === "ADMIN" ? 10 : 9}
                     className="px-4 py-8 text-center text-gray-500"
                   >
                     No packing lists found
@@ -216,6 +218,19 @@ export default function VendorPackingListsPage() {
                     <td className="px-4 py-4">{row.asn_no || "-"}</td>
 
                     <td className="px-4 py-4">{row.eta || "-"}</td>
+
+                    <td className="px-4 py-4">
+                      {row.doc_count > 0 ? (
+                        <Link
+                          href={`/vendor/packing-lists/${row.id}`}
+                          className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                        >
+                          📎 {row.doc_count}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
+                    </td>
 
                     <td className="px-4 py-4">
                       {formatDateTime(row.created_at)}
