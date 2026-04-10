@@ -314,23 +314,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: plNoData, error: plNoError } = await supabase.rpc(
-      "generate_pl_no"
-    );
-
-    if (plNoError || !plNoData) {
-      return NextResponse.json(
-        { ok: false, error: plNoError?.message ?? "Failed to generate pl_no" },
-        { status: 500 }
-      );
-    }
-
-    const plNo = plNoData as string;
-
+    // pl_no는 FINALIZE 시점에 부여 — DRAFT 단계에서는 null
     const { data: insertedHeader, error: headerInsertError } = await supabase
       .from("packing_list_header")
       .insert({
-        pl_no: plNo,
+        pl_no: null,
         vendor_id: insertVendorId,
         po_no: representativePoNo,
         eta: representativeEta,

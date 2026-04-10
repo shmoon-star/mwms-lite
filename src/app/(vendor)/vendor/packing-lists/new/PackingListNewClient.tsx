@@ -55,11 +55,11 @@ function pickPreviewRows(json: PreviewResponse): PreviewRow[] {
   return [];
 }
 
-export default function PackingListNewClient() {
+export default function PackingListNewClient({ initialPoNo = "" }: { initialPoNo?: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [poOptions, setPoOptions] = useState<PoOption[]>([]);
-  const [selectedPoNo, setSelectedPoNo] = useState("");
+  const [selectedPoNo, setSelectedPoNo] = useState(initialPoNo);
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [previewLoaded, setPreviewLoaded] = useState(false);
 
@@ -118,8 +118,10 @@ export default function PackingListNewClient() {
       const items = json.items ?? [];
       setPoOptions(items);
 
-      if (items.length > 0 && !selectedPoNo) {
-        setSelectedPoNo(items[0].po_no);
+      // initialPoNo가 목록에 있으면 그걸 우선 선택, 없으면 첫 번째 항목
+      if (!selectedPoNo && items.length > 0) {
+        const found = initialPoNo ? items.find((p) => p.po_no === initialPoNo) : null;
+        setSelectedPoNo(found ? found.po_no : items[0].po_no);
       }
     } catch (e: any) {
       setPoOptions([]);
@@ -335,7 +337,7 @@ export default function PackingListNewClient() {
             </option>
             {poOptions.map((po) => (
               <option key={po.id} value={po.po_no}>
-                {po.po_no}
+                {po.po_no} [{po.status ?? "-"}]
               </option>
             ))}
           </select>

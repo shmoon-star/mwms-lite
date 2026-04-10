@@ -306,12 +306,27 @@ const { data: insertedAsnLines, error: insertedAsnLinesError } = await supabase
 console.log("FINALIZE insertedAsnLines", insertedAsnLines, insertedAsnLinesError);
 
 
+    // FINALIZE 시점에 pl_no 부여 (아직 없는 경우)
+    let plNo = header.pl_no;
+    if (!plNo) {
+      const { data: plNoData, error: plNoError } = await supabase.rpc("generate_pl_no");
+      if (plNoError || !plNoData) {
+        await supabase.from("asn_header").delete().eq("id", asnId);
+        return NextResponse.json(
+          { ok: false, error: plNoError?.message ?? "Failed to generate pl_no" },
+          { status: 500 }
+        );
+      }
+      plNo = plNoData as string;
+    }
+
     const { error: plUpdateError } = await supabase
       .from("packing_list_header")
       .update({
         status: "FINALIZED",
+        pl_no: plNo,
         asn_id: asnId,
-        finalized_at: new Date().toISOString(),        
+        finalized_at: new Date().toISOString(),
       })
       .eq("id", id);
 

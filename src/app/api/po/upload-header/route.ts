@@ -9,6 +9,7 @@ type ParsedRow = {
   vendor: string | null; // CSV input: vendor_code or vendor_name or UUID
   eta: string | null;
   status: string | null;
+  buyer_code: string | null; // optional CSV column
 };
 
 type VendorRow = {
@@ -75,6 +76,7 @@ function parseCsv(text: string): ParsedRow[] {
   const vendorIdx = headers.indexOf("vendor");
   const etaIdx = headers.indexOf("eta");
   const statusIdx = headers.indexOf("status");
+  const buyerCodeIdx = headers.indexOf("buyer_code");
 
   if (poNoIdx === -1) {
     throw new Error("CSV must include 'po_no' header");
@@ -96,6 +98,8 @@ function parseCsv(text: string): ParsedRow[] {
     const eta = String(cols[etaIdx] ?? "").trim();
     const status =
       statusIdx >= 0 ? String(cols[statusIdx] ?? "").trim() : "CREATED";
+    const buyer_code =
+      buyerCodeIdx >= 0 ? String(cols[buyerCodeIdx] ?? "").trim() : null;
 
     if (!po_no) continue;
 
@@ -104,6 +108,7 @@ function parseCsv(text: string): ParsedRow[] {
       vendor: vendor || null,
       eta: eta || null,
       status: status || "CREATED",
+      buyer_code: buyer_code || null,
     });
   }
 
@@ -120,6 +125,7 @@ export async function POST(req: Request) {
 
     const formData = await req.formData();
     const file = formData.get("file");
+    const fallbackBuyerId = String(formData.get("buyer_id") ?? "").trim() || null;
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json(
@@ -164,6 +170,35 @@ export async function POST(req: Request) {
       if (v.vendor_name) vendorMap.set(normalizeKey(v.vendor_name), v);
     }
 
+    // Build buyer_code → buyer_id map (if any rows use buyer_code column)
+    const buyerCodes = [
+      ...new Set(
+        parsed
+          .map((r) => r.buyer_code)
+          .filter((c): c is string => !!c?.trim())
+      ),
+    ];
+
+    const buyerCodeMap = new Map<string, string>(); // buyer_code → buyer uuid
+
+    if (buyerCodes.length > 0) {
+      const { data: buyerRows, error: buyerErr } = await sb
+        .from("buyer")
+        .select("id, buyer_code")
+        .in("buyer_code", buyerCodes);
+
+      if (buyerErr) {
+        return NextResponse.json(
+          { ok: false, error: buyerErr.message },
+          { status: 500 }
+        );
+      }
+
+      for (const b of buyerRows ?? []) {
+        if (b.id && b.buyer_code) buyerCodeMap.set(b.buyer_code.trim(), b.id);
+      }
+    }
+
     const inserted: PoResultRow[] = [];
     const updated: PoResultRow[] = [];
     const errors: Array<{ po_no: string; vendor: string | null; error: string }> = [];
@@ -182,12 +217,20 @@ export async function POST(req: Request) {
           throw new Error(`Vendor not found for input: ${vendorInput}`);
         }
 
-        const payload = {
+        // Resolve buyer_id: CSV buyer_code > fallback buyer_id from formData
+        const resolvedBuyerId =
+          (row.buyer_code ? buyerCodeMap.get(row.buyer_code) : null) ??
+          fallbackBuyerId ??
+          null;
+
+        const payload: Record<string, unknown> = {
           po_no: row.po_no,
           vendor_id: matchedVendor.id,
           eta: row.eta,
           status: row.status ?? "CREATED",
         };
+
+        if (resolvedBuyerId) payload.buyer_id = resolvedBuyerId;
 
         const { data: existing, error: existingErr } = await sb
           .from("po_header")

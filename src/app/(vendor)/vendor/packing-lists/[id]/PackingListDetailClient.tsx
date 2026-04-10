@@ -119,6 +119,7 @@ export default function PackingListDetailClient({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [mismatchSkuRows, setMismatchSkuRows] = useState<SkuRow[] | null>(null);
+  const [etaMismatch, setEtaMismatch] = useState<{ po_eta: string | null; pl_eta: string | null } | null>(null);
   const [actionLoading, setActionLoading] = useState<"" | "submit" | "finalize">("");
   const [grRemarks, setGrRemarks] = useState<GrRemark[] | null>(null);
   const [grHasDiscrepancy, setGrHasDiscrepancy] = useState(false);
@@ -171,6 +172,7 @@ export default function PackingListDetailClient({ id }: { id: string }) {
       setActionLoading("submit");
       setError("");
       setMismatchSkuRows(null);
+      setEtaMismatch(null);
 
       const res = await fetch(`/api/vendor/packing-lists/${id}/submit`, {
         method: "POST",
@@ -179,9 +181,18 @@ export default function PackingListDetailClient({ id }: { id: string }) {
       const json = await res.json();
 
       if (!res.ok || !json?.ok) {
-        // 수량 불일치(422) 시 SKU 비교 데이터 저장
-        if (res.status === 422 && json?.skuRows) {
-          setMismatchSkuRows(json.skuRows);
+        if (res.status === 422) {
+          // ETA 불일치
+          if (json?.etaMismatch) setEtaMismatch(json.etaMismatch);
+          // 수량 불일치
+          if (json?.skuRows) setMismatchSkuRows(json.skuRows);
+          // 복합 에러 메시지
+          const msgs: string[] = Array.isArray(json?.errors)
+            ? json.errors.map((e: { message: string }) => e.message)
+            : json?.error
+            ? [json.error]
+            : ["제출에 실패했습니다."];
+          throw new Error(msgs.join("\n"));
         }
         throw new Error(json?.error || "Failed to submit packing list");
       }
@@ -250,6 +261,11 @@ export default function PackingListDetailClient({ id }: { id: string }) {
   const canOpenAsn =
     (normalizedStatus === "FINALIZED" || normalizedStatus === "INBOUND_COMPLETED") &&
     !!asn?.id;
+  // FINALIZED / INBOUND_COMPLETED / CONFIRMED 이전 상태에서 재업로드 허용
+  const canReupload =
+    normalizedStatus !== "FINALIZED" &&
+    normalizedStatus !== "INBOUND_COMPLETED" &&
+    normalizedStatus !== "CONFIRMED";
 
   return (
     <div className="space-y-6">
@@ -300,6 +316,15 @@ export default function PackingListDetailClient({ id }: { id: string }) {
             Refresh
           </button>
 
+          {canReupload && header.po_no ? (
+            <Link
+              href={`/vendor/packing-lists/new?po_no=${encodeURIComponent(header.po_no)}`}
+              className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-2 text-blue-700 hover:bg-blue-100"
+            >
+              재업로드
+            </Link>
+          ) : null}
+
           {canSubmit ? (
             <button
               onClick={submitPackingList}
@@ -332,10 +357,58 @@ export default function PackingListDetailClient({ id }: { id: string }) {
       </div>
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 whitespace-pre-line">
           {error}
         </div>
       ) : null}
+
+      {/* ETA 불일치 경고 */}
+      {etaMismatch && (
+        <div className="rounded-xl border border-red-200 overflow-hidden">
+          <div className="bg-red-50 px-4 py-3 border-b border-red-200 flex items-center gap-2">
+            <span className="text-red-600 font-bold text-base">⚠️ ETA 불일치</span>
+            <span className="text-red-700 text-sm font-medium">
+              발주 ETA와 패킹리스트 ETA가 일치하지 않습니다. 담당 MD와 재확인 후 필요 시 수정을 요청해 주세요.
+            </span>
+          </div>
+          <table className="w-full text-sm border-collapse">
+            <thead className="bg-red-50 text-red-800">
+              <tr>
+                <th className="px-4 py-2 text-left">구분</th>
+                <th className="px-4 py-2 text-center">ETA</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-red-100 bg-white">
+                <td className="px-4 py-3 font-medium text-gray-700">발주 ETA (PO)</td>
+                <td className="px-4 py-3 text-center font-bold text-gray-900">
+                  {etaMismatch.po_eta ?? "-"}
+                </td>
+              </tr>
+              <tr className="border-t border-red-100 bg-red-50">
+                <td className="px-4 py-3 font-medium text-red-700">패킹리스트 ETA (PL)</td>
+                <td className="px-4 py-3 text-center font-bold text-red-700">
+                  {etaMismatch.pl_eta ?? "-"}
+                </td>
+              </tr>
+              {etaMismatch.po_eta && etaMismatch.pl_eta && (() => {
+                const diff = Math.round(
+                  (new Date(etaMismatch.pl_eta).getTime() - new Date(etaMismatch.po_eta).getTime())
+                  / (1000 * 60 * 60 * 24)
+                );
+                return (
+                  <tr className="border-t border-red-200 bg-red-100">
+                    <td className="px-4 py-3 font-semibold text-red-800">차이</td>
+                    <td className={`px-4 py-3 text-center font-bold ${diff > 0 ? "text-amber-700" : "text-red-700"}`}>
+                      {diff > 0 ? `+${diff}일 (PL이 늦음)` : `${diff}일 (PL이 빠름)`}
+                    </td>
+                  </tr>
+                );
+              })()}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* SKU 수량 불일치 테이블 */}
       {mismatchSkuRows && mismatchSkuRows.length > 0 && (

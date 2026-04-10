@@ -1,7 +1,7 @@
 // src/lib/authz.ts
 import { createClient } from "@/lib/supabase/server";
 
-export type AppRole = "ADMIN" | "VENDOR";
+export type AppRole = "ADMIN" | "VENDOR" | "BUYER";
 
 export type CurrentUserProfile = {
   id: string;
@@ -10,6 +10,7 @@ export type CurrentUserProfile = {
   user_type: string | null;
   role: AppRole;
   vendor_id: string | null; // uuid
+  buyer_id: string | null;  // uuid
   status: string | null;
 };
 
@@ -17,6 +18,12 @@ export type CurrentVendorInfo = {
   id: string; // uuid
   vendor_code: string;
   vendor_name: string | null;
+};
+
+export type CurrentBuyerInfo = {
+  id: string;
+  buyer_code: string;
+  buyer_name: string | null;
 };
 
 export async function getCurrentUserProfile(): Promise<CurrentUserProfile> {
@@ -33,7 +40,7 @@ export async function getCurrentUserProfile(): Promise<CurrentUserProfile> {
 
   const { data: profile, error: profileError } = await sb
     .from("user_profiles")
-    .select("id, auth_user_id, email, user_type, role, vendor_id, status")
+    .select("id, auth_user_id, email, user_type, role, vendor_id, buyer_id, status")
     .eq("auth_user_id", user.id)
     .single();
 
@@ -41,14 +48,18 @@ export async function getCurrentUserProfile(): Promise<CurrentUserProfile> {
     throw new Error("User profile not found");
   }
 
-  const role = (profile.role || "VENDOR").toUpperCase() as AppRole;
+  const role = (profile.role || profile.user_type || "VENDOR").toUpperCase() as AppRole;
 
-  if (!["ADMIN", "VENDOR"].includes(role)) {
+  if (!["ADMIN", "VENDOR", "BUYER"].includes(role)) {
     throw new Error("Invalid user role");
   }
 
   if (role === "VENDOR" && !profile.vendor_id) {
     throw new Error("Vendor user has no vendor_id");
+  }
+
+  if (role === "BUYER" && !profile.buyer_id) {
+    throw new Error("Buyer user has no buyer_id");
   }
 
   if (profile.status && profile.status !== "ACTIVE") {
@@ -62,6 +73,7 @@ export async function getCurrentUserProfile(): Promise<CurrentUserProfile> {
     user_type: profile.user_type ?? null,
     role,
     vendor_id: profile.vendor_id ?? null,
+    buyer_id: profile.buyer_id ?? null,
     status: profile.status ?? null,
   };
 }
@@ -87,6 +99,30 @@ export async function getCurrentVendorInfo(
     id: data.id,
     vendor_code: data.vendor_code,
     vendor_name: data.vendor_name ?? null,
+  };
+}
+
+export async function getCurrentBuyerInfo(
+  profile: CurrentUserProfile
+): Promise<CurrentBuyerInfo | null> {
+  if (!profile.buyer_id) return null;
+
+  const sb = await createClient();
+
+  const { data, error } = await sb
+    .from("buyer")
+    .select("id, buyer_code, buyer_name")
+    .eq("id", profile.buyer_id)
+    .single();
+
+  if (error || !data) {
+    throw new Error("Buyer master not found");
+  }
+
+  return {
+    id: data.id,
+    buyer_code: data.buyer_code,
+    buyer_name: data.buyer_name ?? null,
   };
 }
 
@@ -121,6 +157,26 @@ export function assertVendorCodeAccess(
   }
 
   if (myVendorCode !== targetVendorCode) {
+    throw new Error("Forbidden");
+  }
+}
+
+/** BUYER or ADMIN can access buyer pages */
+export function assertBuyerAccess(
+  profile: CurrentUserProfile,
+  targetBuyerId?: string | null
+) {
+  if (profile.role === "ADMIN") return;
+
+  if (profile.role !== "BUYER") {
+    throw new Error("Forbidden");
+  }
+
+  if (!profile.buyer_id) {
+    throw new Error("Forbidden");
+  }
+
+  if (targetBuyerId && profile.buyer_id !== targetBuyerId) {
     throw new Error("Forbidden");
   }
 }

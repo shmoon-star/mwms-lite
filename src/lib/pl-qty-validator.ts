@@ -1,6 +1,7 @@
 /**
- * 패킹리스트 수량 검증
+ * 패킹리스트 수량 및 ETA 검증
  * PO SKU별 발주수량 vs PL SKU별 포장수량 비교
+ * PO ETA vs PL ETA 비교
  */
 
 import { SupabaseClient } from "@supabase/supabase-js";
@@ -18,6 +19,60 @@ export type QtyValidationResult =
 
 export const QTY_MISMATCH_MESSAGE =
   "발주수량과 납품예정수량이 일치하지 않습니다. 담당 MD와 재확인 후 필요 시 수정을 요청해 주세요.";
+
+export const ETA_MISMATCH_MESSAGE =
+  "발주 ETA와 패킹리스트 ETA가 일치하지 않습니다. 담당 MD와 재확인 후 필요 시 수정을 요청해 주세요.";
+
+export type EtaValidationResult =
+  | { ok: true }
+  | { ok: false; po_eta: string | null; pl_eta: string | null; message: string };
+
+/**
+ * PO ETA vs PL ETA 비교 검증
+ */
+export async function validatePlEtaByPo(
+  sb: SupabaseClient,
+  poNo: string,
+  plId: string
+): Promise<EtaValidationResult> {
+  // PO ETA 조회
+  const { data: poHeader, error: poErr } = await sb
+    .from("po_header")
+    .select("eta")
+    .eq("po_no", poNo)
+    .maybeSingle();
+
+  if (poErr) throw new Error(poErr.message);
+
+  // PO에 ETA가 없으면 검증 패스 (비교 불가)
+  if (!poHeader?.eta) return { ok: true };
+
+  // PL ETA 조회
+  const { data: plHeader, error: plErr } = await sb
+    .from("packing_list_header")
+    .select("eta")
+    .eq("id", plId)
+    .maybeSingle();
+
+  if (plErr) throw new Error(plErr.message);
+
+  const poEta = String(poHeader.eta).trim().slice(0, 10); // YYYY-MM-DD
+  const plEta = plHeader?.eta ? String(plHeader.eta).trim().slice(0, 10) : null;
+
+  // PL ETA가 없으면 검증 패스 (입력 안 한 경우)
+  if (!plEta) return { ok: true };
+
+  if (poEta !== plEta) {
+    return {
+      ok: false,
+      po_eta: poEta,
+      pl_eta: plEta,
+      message: ETA_MISMATCH_MESSAGE,
+    };
+  }
+
+  return { ok: true };
+}
 
 /**
  * @param sb      Supabase 클라이언트 (server 또는 admin)

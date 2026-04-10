@@ -12,7 +12,8 @@ type ParsedRow = {
   sku: string;
   qty_ordered: number;
   remarks: string | null;
-  description: string | null; // ✅ 추가
+  description: string | null;
+  buyer_code: string | null; // optional CSV column
 };
 
 function parseCsvLine(line: string): string[] {
@@ -73,7 +74,8 @@ function parseCsv(text: string): ParsedRow[] {
   const skuIdx = getIdx("sku");
   const qtyOrderedIdx = getIdx("qty_ordered");
   const remarksIdx = headers.indexOf("remarks");
-  const descriptionIdx = headers.indexOf("description"); // ✅ 추가
+  const descriptionIdx = headers.indexOf("description");
+  const buyerCodeIdx = headers.indexOf("buyer_code");
 
   const rows: ParsedRow[] = [];
 
@@ -94,6 +96,11 @@ function parseCsv(text: string): ParsedRow[] {
         ? String(cols[descriptionIdx] ?? "").trim() || null
         : null;
 
+    const buyer_code =
+      buyerCodeIdx >= 0
+        ? String(cols[buyerCodeIdx] ?? "").trim() || null
+        : null;
+
     if (!dn_no || !sku) continue;
     if (!Number.isFinite(qty_ordered) || qty_ordered <= 0) continue;
 
@@ -106,7 +113,8 @@ function parseCsv(text: string): ParsedRow[] {
       sku,
       qty_ordered,
       remarks,
-      description, // ✅ 추가
+      description,
+      buyer_code,
     });
   }
 
@@ -119,6 +127,7 @@ export async function POST(req: Request) {
 
     const formData = await req.formData();
     const file = formData.get("file");
+    const fallbackBuyerId = String(formData.get("buyer_id") ?? "").trim() || null;
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ ok: false, error: "CSV file is required" }, { status: 400 });
@@ -131,9 +140,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "No valid rows" }, { status: 400 });
     }
 
+    // Build buyer_code → buyer_id map
+    const buyerCodes = [...new Set(parsed.map(r => r.buyer_code).filter((c): c is string => !!c))];
+    const buyerCodeMap = new Map<string, string>();
+
+    if (buyerCodes.length > 0) {
+      const { data: buyerRows } = await supabase
+        .from("buyer")
+        .select("id, buyer_code")
+        .in("buyer_code", buyerCodes);
+
+      for (const b of buyerRows ?? []) {
+        if (b.id && b.buyer_code) buyerCodeMap.set(b.buyer_code.trim(), b.id);
+      }
+    }
+
     const headerCache = new Map<string, string>();
+    let inserted_header_count = 0;
+    let inserted_line_count = 0;
+    let updated_line_count = 0;
 
     for (const row of parsed) {
+      // Resolve buyer_id: CSV buyer_code > fallback from formData
+      const resolvedBuyerId =
+        (row.buyer_code ? buyerCodeMap.get(row.buyer_code) : null) ??
+        fallbackBuyerId ??
+        null;
+
       let dnId = headerCache.get(row.dn_no);
 
       if (!dnId) {
@@ -146,43 +179,45 @@ export async function POST(req: Request) {
         if (existingHeader?.id) {
           dnId = existingHeader.id;
 
+          const updatePayload: Record<string, unknown> = {
+            ship_from: row.ship_from,
+            ship_to: row.ship_to,
+            planned_gi_date: row.planned_gi_date,
+            planned_delivery_date: row.planned_delivery_date,
+          };
+          if (resolvedBuyerId) updatePayload.buyer_id = resolvedBuyerId;
+
           await supabase
             .from("dn_header")
-            .update({
-              ship_from: row.ship_from,
-              ship_to: row.ship_to,
-              planned_gi_date: row.planned_gi_date,
-              planned_delivery_date: row.planned_delivery_date,
-            })
+            .update(updatePayload)
             .eq("id", dnId);
         } else {
+          const insertPayload: Record<string, unknown> = {
+            dn_no: row.dn_no,
+            status: "PENDING",
+            ship_from: row.ship_from,
+            ship_to: row.ship_to,
+            planned_gi_date: row.planned_gi_date,
+            planned_delivery_date: row.planned_delivery_date,
+          };
+          if (resolvedBuyerId) insertPayload.buyer_id = resolvedBuyerId;
+
           const { data: createdHeader } = await supabase
             .from("dn_header")
-            .insert({
-              dn_no: row.dn_no,
-              status: "PENDING",
-              ship_from: row.ship_from,
-              ship_to: row.ship_to,
-              planned_gi_date: row.planned_gi_date,
-              planned_delivery_date: row.planned_delivery_date,
-            })
+            .insert(insertPayload)
             .select("*")
             .single();
 
           if (!createdHeader?.id) throw new Error("Header create fail");
-
           dnId = createdHeader.id;
-        }
-   if (!dnId) {
-          throw new Error(`dnId not resolved for dn_no: ${row.dn_no}`);
+          inserted_header_count++;
         }
 
+        if (!dnId) throw new Error(`dnId not resolved for dn_no: ${row.dn_no}`);
         headerCache.set(row.dn_no, dnId);
       }
 
-      if (!dnId) {
-        throw new Error(`dnId not resolved for dn_no: ${row.dn_no}`);
-      }
+      if (!dnId) throw new Error(`dnId not resolved for dn_no: ${row.dn_no}`);
 
       const { data: existingLine } = await supabase
         .from("dn_lines")
@@ -198,9 +233,10 @@ export async function POST(req: Request) {
             qty: row.qty_ordered,
             qty_ordered: row.qty_ordered,
             qty_shipped: 0,
-            description: row.description, // ✅ 추가
+            description: row.description,
           })
           .eq("id", existingLine.id);
+        updated_line_count++;
       } else {
         await supabase
           .from("dn_lines")
@@ -210,12 +246,19 @@ export async function POST(req: Request) {
             qty: row.qty_ordered,
             qty_ordered: row.qty_ordered,
             qty_shipped: 0,
-            description: row.description, // ✅ 추가
+            description: row.description,
           });
+        inserted_line_count++;
       }
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      inserted_header_count,
+      inserted_line_count,
+      updated_line_count,
+      total_rows: parsed.length,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }

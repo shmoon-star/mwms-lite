@@ -1,6 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+type Buyer = {
+  id: string;
+  buyer_code: string;
+  buyer_name: string | null;
+  buyer_name_en: string | null;
+  country: string | null;
+};
 
 type UploadCardProps = {
   title: string;
@@ -10,6 +18,8 @@ type UploadCardProps = {
   uploadAction: string;
   uploadLabel: string;
   step: number;
+  /** extra formData fields to append */
+  extraFields?: Record<string, string>;
 };
 
 type UploadResult = {
@@ -25,13 +35,13 @@ function UploadCard({
   uploadAction,
   uploadLabel,
   step,
+  extraFields,
 }: UploadCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<UploadResult | null>(null);
 
-  // 파일 선택 버튼 클릭 → input 직접 트리거
   function handleSelectClick() {
     inputRef.current?.click();
   }
@@ -52,6 +62,13 @@ function UploadCard({
     try {
       const formData = new FormData();
       formData.append("file", file);
+
+      // Append any extra fields (e.g. buyer_id)
+      if (extraFields) {
+        for (const [key, value] of Object.entries(extraFields)) {
+          if (value) formData.append(key, value);
+        }
+      }
 
       const res = await fetch(uploadAction, {
         method: "POST",
@@ -114,7 +131,6 @@ function UploadCard({
       <div>
         <div style={sectionLabel}>업로드</div>
 
-        {/* 숨겨진 파일 input */}
         <input
           ref={inputRef}
           type="file"
@@ -123,7 +139,6 @@ function UploadCard({
           style={{ display: "none" }}
         />
 
-        {/* 파일 선택 행 */}
         <div style={fileRow}>
           <button type="button" onClick={handleSelectClick} style={fileSelectBtn}>
             📎 파일 선택
@@ -137,7 +152,6 @@ function UploadCard({
           </span>
         </div>
 
-        {/* 업로드 버튼 */}
         <button
           type="button"
           onClick={handleUpload}
@@ -151,7 +165,6 @@ function UploadCard({
           {uploading ? "업로드 중..." : uploadLabel}
         </button>
 
-        {/* 결과 메시지 */}
         {result && (
           <div style={{
             marginTop: 8,
@@ -172,10 +185,55 @@ function UploadCard({
 }
 
 export default function POUploadPanel() {
+  const [buyers, setBuyers] = useState<Buyer[]>([]);
+  const [buyerId, setBuyerId] = useState<string>("");
+  const [buyersLoading, setBuyersLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/buyers")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.ok) setBuyers(json.data ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setBuyersLoading(false));
+  }, []);
+
   return (
     <div style={panelWrap}>
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, color: "#111" }}>
         PO 업로드
+      </div>
+
+      {/* Buyer 선택 */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Buyer (선택)
+        </div>
+        <select
+          value={buyerId}
+          onChange={(e) => setBuyerId(e.target.value)}
+          disabled={buyersLoading}
+          style={{
+            padding: "8px 12px",
+            border: "1px solid #d1d5db",
+            borderRadius: 6,
+            fontSize: 13,
+            background: "#fff",
+            color: "#111827",
+            minWidth: 240,
+          }}
+        >
+          <option value="">— Buyer 선택 (없으면 CSV의 buyer_code 컬럼 사용) —</option>
+          {buyers.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.buyer_code}{b.buyer_name ? ` · ${b.buyer_name}` : ""}{b.country ? ` (${b.country})` : ""}
+            </option>
+          ))}
+        </select>
+        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+          * CSV에 buyer_code 컬럼이 있으면 행별로 자동 매핑됩니다. 드롭다운 선택 시 전체 행에 적용됩니다.
+        </div>
       </div>
 
       <div style={grid}>
@@ -187,6 +245,7 @@ export default function POUploadPanel() {
           templateLabel="Header 템플릿 다운로드"
           uploadAction="/api/po/upload-header"
           uploadLabel="Header 업로드"
+          extraFields={buyerId ? { buyer_id: buyerId } : undefined}
         />
         <UploadCard
           step={2}
@@ -200,7 +259,7 @@ export default function POUploadPanel() {
       </div>
 
       <div style={flowHint}>
-        순서 &nbsp;①&nbsp; Header CSV 업로드 &nbsp;→&nbsp; ②&nbsp; Line CSV 업로드 &nbsp;→&nbsp; PO 상세 확인
+        순서 &nbsp;①&nbsp; Buyer 선택 (선택사항) &nbsp;→&nbsp; ②&nbsp; Header CSV 업로드 &nbsp;→&nbsp; ③&nbsp; Line CSV 업로드 &nbsp;→&nbsp; PO 상세 확인
       </div>
     </div>
   );

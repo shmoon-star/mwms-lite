@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { notifyPackingListSubmitted, safeNotify, getVendorInfo} from "@/lib/notify";
-import { validatePlQtyByPo } from "@/lib/pl-qty-validator";
+import { validatePlQtyByPo, validatePlEtaByPo } from "@/lib/pl-qty-validator";
 
 
 export const dynamic = "force-dynamic";
@@ -184,16 +184,33 @@ export async function POST(_req: NextRequest, context: RouteContext) {
       );
     }
 
-    // ── PO vs PL SKU 수량 검증 ─────────────────────────────────────
+    // ── PO vs PL ETA + 수량 검증 (병렬, 복합 에러 반환) ───────────
     if (header.po_no) {
-      const validation = await validatePlQtyByPo(supabase, header.po_no, id);
-      if (!validation.ok) {
+      const [etaValidation, qtyValidation] = await Promise.all([
+        validatePlEtaByPo(supabase, header.po_no, id),
+        validatePlQtyByPo(supabase, header.po_no, id),
+      ]);
+
+      if (!etaValidation.ok || !qtyValidation.ok) {
+        const errors: { type: string; message: string }[] = [];
+        if (!etaValidation.ok) errors.push({ type: "ETA", message: etaValidation.message });
+        if (!qtyValidation.ok) errors.push({ type: "QTY", message: qtyValidation.message });
+
         return NextResponse.json(
           {
             ok: false,
-            error: validation.message,
-            mismatches: validation.mismatches,
-            skuRows: validation.skuRows,
+            errors,
+            error: errors[0].message,
+            ...(!etaValidation.ok && {
+              etaMismatch: {
+                po_eta: etaValidation.po_eta,
+                pl_eta: etaValidation.pl_eta,
+              },
+            }),
+            ...(!qtyValidation.ok && {
+              mismatches: qtyValidation.mismatches,
+              skuRows: qtyValidation.skuRows,
+            }),
           },
           { status: 422 }
         );

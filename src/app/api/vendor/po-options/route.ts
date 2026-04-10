@@ -186,14 +186,28 @@ export async function GET(_req: NextRequest) {
     const headers = (headersRaw ?? []) as PoHeaderRow[];
 
     if (headers.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        total: 0,
-        items: [],
-      });
+      return NextResponse.json({ ok: true, total: 0, items: [] });
     }
 
-    const poIds = headers.map((h) => h.id);
+    // INBOUND_COMPLETED PL이 존재하는 PO는 제외
+    const poNos = headers.map((h) => h.po_no).filter(Boolean) as string[];
+    const { data: completedPlRaw } = await supabase
+      .from("packing_list_header")
+      .select("po_no")
+      .in("po_no", poNos)
+      .eq("status", "INBOUND_COMPLETED");
+
+    const completedPoNos = new Set(
+      (completedPlRaw ?? []).map((r: { po_no: string | null }) => r.po_no).filter(Boolean)
+    );
+
+    const filteredHeaders = headers.filter((h) => !completedPoNos.has(h.po_no));
+
+    if (filteredHeaders.length === 0) {
+      return NextResponse.json({ ok: true, total: 0, items: [] });
+    }
+
+    const poIds = filteredHeaders.map((h) => h.id);
 
     const { data: linesRaw, error: linesError } = await supabase
       .from("po_line")
@@ -229,7 +243,7 @@ export async function GET(_req: NextRequest) {
       lineAggMap.set(line.po_id, agg);
     }
 
-    const items = headers.map((row) => {
+    const items = filteredHeaders.map((row) => {
       const agg = lineAggMap.get(row.id) ?? {
         total_qty: 0,
         sku_set: new Set<string>(),
