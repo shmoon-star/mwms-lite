@@ -25,6 +25,7 @@ type AsnLineRow = {
 };
 
 type GrLineRow = {
+  gr_id: string | null;
   asn_line_id: string | null;
   qty_received: number | null;
   qty: number | null;
@@ -43,6 +44,7 @@ type PackingListHeaderRow = {
   id: string;
   pl_no: string | null;
   po_no: string | null;
+  eta: string | null;
 };
 
 type PackingListLineRow = {
@@ -208,6 +210,7 @@ export async function GET(req: Request) {
       const { data: grRowsRaw, error: grErr } = await sb
         .from("gr_line")
         .select(`
+          gr_id,
           asn_line_id,
           qty_received,
           qty
@@ -255,7 +258,7 @@ export async function GET(req: Request) {
     if (packingListIds.length > 0) {
       const { data: plRowsRaw, error: plErr } = await sb
         .from("packing_list_header")
-        .select("id, pl_no, po_no")
+        .select("id, pl_no, po_no, eta")
         .in("id", packingListIds);
 
       if (plErr) throw plErr;
@@ -371,7 +374,27 @@ export async function GET(req: Request) {
       }
     }
 
+    // vendor_documents counts per packing list
+    const docCountByPlId = new Map<string, number>();
+    if (packingListIds.length > 0) {
+      const { data: docRows } = await sb
+        .from("vendor_documents")
+        .select("pl_id")
+        .in("pl_id", packingListIds);
+      for (const row of docRows ?? []) {
+        docCountByPlId.set(row.pl_id, (docCountByPlId.get(row.pl_id) ?? 0) + 1);
+      }
+    }
+
+    const confirmedGrIds = new Set<string>();
+    for (const gr of grHeaderMap.values()) {
+      if (String(gr.status || "").toUpperCase() === "CONFIRMED" && gr.id) {
+        confirmedGrIds.add(gr.id);
+      }
+    }
+
     const receivedByAsnLineId = new Map<string, number>();
+    const confirmedByAsnLineId = new Map<string, number>();
     for (const gr of grLineRows) {
       const asnLineId = String(gr.asn_line_id || "").trim();
       if (!asnLineId) continue;
@@ -381,6 +404,13 @@ export async function GET(req: Request) {
         asnLineId,
         safeNum(receivedByAsnLineId.get(asnLineId)) + receivedQty
       );
+
+      if (gr.gr_id && confirmedGrIds.has(gr.gr_id)) {
+        confirmedByAsnLineId.set(
+          asnLineId,
+          safeNum(confirmedByAsnLineId.get(asnLineId)) + receivedQty
+        );
+      }
     }
 
     const lineRowsByAsnId = new Map<string, AsnLineRow[]>();
@@ -408,6 +438,7 @@ export async function GET(req: Request) {
 
       let asnQty = 0;
       let receivedQty = 0;
+      let scmGrQty = 0;
       const cartonSet = new Set<string>();
 
       for (const line of lines) {
@@ -423,6 +454,7 @@ export async function GET(req: Request) {
 
         asnQty += rowAsnQty;
         receivedQty += safeNum(receivedByAsnLineId.get(line.id));
+        scmGrQty += safeNum(confirmedByAsnLineId.get(line.id));
 
         if (rowCartonNo) {
           cartonSet.add(rowCartonNo);
@@ -452,14 +484,19 @@ export async function GET(req: Request) {
         computed_status: computedStatus,
         total_cartons: cartonSet.size,
         po_qty: poQty,
+        eta: packingHeader?.eta ?? null,
         asn_qty: asnQty,
         received_qty: receivedQty,
+        scm_gr_qty: scmGrQty,
         balance_qty: balanceQty,
         gr_id: gr?.id ?? null,
         gr_no: gr?.gr_no ?? null,
         gr_status: gr?.status ?? null,
         gr_confirmed_at: gr?.confirmed_at ?? null,
         created_at: header.created_at,
+        doc_count: String(header.source_type || "").toUpperCase() === "PACKING_LIST" && header.source_id
+          ? (docCountByPlId.get(header.source_id) ?? 0)
+          : 0,
       };
     });
 

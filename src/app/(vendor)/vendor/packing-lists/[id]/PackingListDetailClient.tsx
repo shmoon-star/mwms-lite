@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type PackingListLine = {
   id: string;
@@ -307,14 +308,13 @@ export default function PackingListDetailClient({ id }: { id: string }) {
   const canSubmit = normalizedStatus === "DRAFT";
   const canFinalize =
     normalizedStatus === "DRAFT" || normalizedStatus === "SUBMITTED";
-  const canOpenAsn =
-    (normalizedStatus === "FINALIZED" || normalizedStatus === "INBOUND_COMPLETED") &&
-    !!asn?.id;
-  // FINALIZED / INBOUND_COMPLETED / CONFIRMED 이전 상태에서 재업로드 허용
+  // FINALIZED / INBOUND_COMPLETED / CONFIRMED / CANCELED 상태에서는 재업로드 불가
   const canReupload =
     normalizedStatus !== "FINALIZED" &&
     normalizedStatus !== "INBOUND_COMPLETED" &&
-    normalizedStatus !== "CONFIRMED";
+    normalizedStatus !== "CONFIRMED" &&
+    normalizedStatus !== "CANCELED" &&
+    normalizedStatus !== "CANCELLED";
 
   return (
     <div className="space-y-6">
@@ -345,11 +345,11 @@ export default function PackingListDetailClient({ id }: { id: string }) {
             </div>
             <div>
               <span className="font-semibold">Created At:</span>{" "}
-              {formatDateTime(header.created_at)}
+              {fmtDate(header.created_at) || "-"}
             </div>
             <div>
               <span className="font-semibold">Updated At:</span>{" "}
-              {formatDateTime(header.updated_at)}
+              {fmtDate(header.updated_at) || "-"}
             </div>
             <div>
               <span className="font-semibold">ASN No:</span> {asn?.asn_no || "-"}
@@ -394,14 +394,6 @@ export default function PackingListDetailClient({ id }: { id: string }) {
             </button>
           ) : null}
 
-          {canOpenAsn ? (
-            <Link
-              href={`/inbound/asn/${asn!.id}`}
-              className="rounded-lg border px-4 py-2 text-blue-700 hover:bg-gray-50 hover:underline"
-            >
-              Open ASN
-            </Link>
-          ) : null}
         </div>
       </div>
 
@@ -668,7 +660,7 @@ export default function PackingListDetailClient({ id }: { id: string }) {
                     {doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : "-"}
                   </td>
                   <td className="px-6 py-3 text-gray-500">
-                    {doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleString("ko-KR") : "-"}
+                    {fmtDate(doc.uploaded_at) || "-"}
                   </td>
                   <td className="px-6 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">

@@ -1,7 +1,7 @@
 // src/lib/authz.ts
 import { createClient } from "@/lib/supabase/server";
 
-export type AppRole = "ADMIN" | "VENDOR" | "BUYER";
+export type AppRole = "ADMIN" | "VENDOR" | "BUYER" | "WMS";
 
 export type CurrentUserProfile = {
   id: string;
@@ -50,7 +50,7 @@ export async function getCurrentUserProfile(): Promise<CurrentUserProfile> {
 
   const role = (profile.role || profile.user_type || "VENDOR").toUpperCase() as AppRole;
 
-  if (!["ADMIN", "VENDOR", "BUYER"].includes(role)) {
+  if (!["ADMIN", "VENDOR", "BUYER", "WMS"].includes(role)) {
     throw new Error("Invalid user role");
   }
 

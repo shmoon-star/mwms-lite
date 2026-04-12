@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type FilterType = "ALL" | "OPEN" | "CLOSED";
 
@@ -244,10 +245,7 @@ function getActionLabelByOpenClosed(isOpen: boolean) {
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString("ko-KR");
+  return fmtDate(value) || "-";
 }
 
 export default function MonitorClient() {

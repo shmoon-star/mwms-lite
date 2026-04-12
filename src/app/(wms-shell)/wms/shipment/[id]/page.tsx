@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { fmtDate as fmtDateYmd } from "@/lib/fmt";
 
 type ShipmentHeader = {
   id: string;
@@ -435,8 +436,8 @@ export default function WmsShipmentDetailPage({
             <div>Container: {header.container_no || "-"}</div>
             <div>Seal No: {header.seal_no || "-"}</div>
             <div>Remark: {header.remark || "-"}</div>
-            <div>Created At: {fmtDate(header.created_at)}</div>
-            <div>Closed At: {fmtDate(header.closed_at)}</div>
+            <div>Created At: {fmtDateYmd(header.created_at) || "-"}</div>
+            <div>Closed At: {fmtDateYmd(header.closed_at) || "-"}</div>
           </div>
         </div>
 
@@ -451,7 +452,7 @@ export default function WmsShipmentDetailPage({
                   <div className="font-medium">{row.dn_no}</div>
                   <div>Status: {row.status || "-"}</div>
                   <div>Ship To: {row.ship_to || "-"}</div>
-                  <div>Created: {fmtDate(row.created_at)}</div>
+                  <div>Created: {fmtDateYmd(row.created_at) || "-"}</div>
                 </div>
               ))
             )}
@@ -724,7 +725,7 @@ export default function WmsShipmentDetailPage({
                     <td className="px-3 py-2">{row.length || 0}</td>
                     <td className="px-3 py-2">{row.width || 0}</td>
                     <td className="px-3 py-2">{row.height || 0}</td>
-                    <td className="px-3 py-2">{fmtDate(row.created_at)}</td>
+                    <td className="px-3 py-2">{fmtDateYmd(row.created_at) || "-"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -762,7 +763,7 @@ export default function WmsShipmentDetailPage({
                         row.pallet_id === selectedPalletId ? "bg-yellow-50" : ""
                       }`}
                     >
-                      <td className="px-3 py-2">{fmtDate(row.scanned_at)}</td>
+                      <td className="px-3 py-2">{fmtDateYmd(row.scanned_at) || "-"}</td>
                       <td className="px-3 py-2">{pallet?.pallet_no || "-"}</td>
                       <td className="px-3 py-2 font-medium">{row.box_barcode}</td>
                       <td className="px-3 py-2">{row.carton_no || "-"}</td>
@@ -802,7 +803,7 @@ export default function WmsShipmentDetailPage({
                 <tbody>
                   {selectedPalletScans.map((row) => (
                     <tr key={row.id} className="border-t">
-                      <td className="px-3 py-2">{fmtDate(row.scanned_at)}</td>
+                      <td className="px-3 py-2">{fmtDateYmd(row.scanned_at) || "-"}</td>
                       <td className="px-3 py-2 font-medium">{row.box_barcode}</td>
                       <td className="px-3 py-2">{row.carton_no || "-"}</td>
                       <td className="px-3 py-2">{row.qty}</td>

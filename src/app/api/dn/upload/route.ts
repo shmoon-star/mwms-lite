@@ -252,6 +252,71 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── 자동 재고 예약 ──────────────────────────────────────────
+    // 새로 생성된 DN에 대해 qty_reserved 반영 + RESERVED 상태로 전환
+    const newDnIds = [...headerCache.values()];
+    for (const dnId of newDnIds) {
+      // 이미 RESERVED 이상이면 스킵
+      const { data: hdr } = await supabase
+        .from("dn_header")
+        .select("id, dn_no, status")
+        .eq("id", dnId)
+        .single();
+
+      if (!hdr || !["PENDING"].includes(String(hdr.status ?? "").toUpperCase())) continue;
+
+      const { data: lines } = await supabase
+        .from("dn_lines")
+        .select("id, sku, qty_ordered")
+        .eq("dn_id", dnId);
+
+      for (const line of lines ?? []) {
+        const sku = String(line.sku ?? "").trim();
+        const qty = Number(line.qty_ordered ?? 0);
+        if (!sku || qty <= 0) continue;
+
+        const { data: inv } = await supabase
+          .from("inventory")
+          .select("sku, qty_reserved")
+          .eq("sku", sku)
+          .maybeSingle();
+
+        if (!inv) continue; // 인벤토리에 없는 SKU는 스킵
+
+        await supabase
+          .from("inventory")
+          .update({ qty_reserved: Number(inv.qty_reserved ?? 0) + qty })
+          .eq("sku", sku);
+
+        // 중복 방지: 같은 DN+SKU 트랜잭션 없을 때만 insert
+        const { data: existingTx } = await supabase
+          .from("inventory_tx")
+          .select("id")
+          .eq("ref_type", "dn_header")
+          .eq("ref_id", dnId)
+          .eq("sku", sku)
+          .eq("tx_type", "DN_RESERVE")
+          .maybeSingle();
+
+        if (!existingTx) {
+          await supabase.from("inventory_tx").insert({
+            sku,
+            tx_type: "DN_RESERVE",
+            qty_delta: qty,
+            ref_type: "dn_header",
+            ref_id: dnId,
+            note: hdr.dn_no ? `DN Reserve ${hdr.dn_no}` : "DN Reserve",
+          });
+        }
+      }
+
+      // PENDING → RESERVED 상태 전환
+      await supabase
+        .from("dn_header")
+        .update({ status: "RESERVED", reserved_at: new Date().toISOString() })
+        .eq("id", dnId);
+    }
+
     return NextResponse.json({
       ok: true,
       inserted_header_count,

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { fmtDate } from "@/lib/fmt";
 
 type DNHeader = {
   id: string;
@@ -14,6 +15,8 @@ type DNHeader = {
   created_at: string | null;
   confirmed_at: string | null;
   shipped_at?: string | null;
+  planned_gi_date?: string | null;
+  planned_delivery_date?: string | null;
 };
 
 type Buyer = {
@@ -48,11 +51,6 @@ function StatusBadge({ status }: { status: string | null }) {
   );
 }
 
-function fmtDate(v: string | null | undefined) {
-  if (!v) return "-";
-  return new Date(v).toLocaleDateString("ko-KR");
-}
-
 export default function DNPage() {
   const router = useRouter();
 
@@ -71,6 +69,35 @@ export default function DNPage() {
   const [shipFile, setShipFile] = useState("");
   const [createResult, setCreateResult] = useState<{ type: "success"|"error"; msg: string } | null>(null);
   const [shipResult, setShipResult] = useState<{ type: "success"|"error"; msg: string } | null>(null);
+
+  // 날짜 인라인 편집 상태: { dnId, field, value }
+  const [editingDate, setEditingDate] = useState<{ dnId: string; field: "planned_gi_date" | "planned_delivery_date"; value: string } | null>(null);
+  const [dateUpdating, setDateUpdating] = useState(false);
+
+  async function handleDateSave() {
+    if (!editingDate) return;
+    setDateUpdating(true);
+    try {
+      const res = await fetch(`/api/dn/${editingDate.dnId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [editingDate.field]: editingDate.value || null }),
+      });
+      const json = await res.json();
+      if (!json?.ok) throw new Error(json?.error || "Failed");
+      // 로컬 state 즉시 반영
+      setDns(prev => prev.map(d =>
+        d.id === editingDate.dnId
+          ? { ...d, [editingDate.field]: editingDate.value || null }
+          : d
+      ));
+      setEditingDate(null);
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setDateUpdating(false);
+    }
+  }
 
   useEffect(() => {
     load();
@@ -299,6 +326,8 @@ export default function DNPage() {
               <th style={th}>Ship To</th>
               <th style={th}>Qty</th>
               <th style={th}>Status</th>
+              <th style={th}>Planned GI</th>
+              <th style={th}>Planned Ship</th>
               <th style={th}>Created</th>
               <th style={th}>Shipped</th>
               <th style={th}>Action</th>
@@ -306,12 +335,13 @@ export default function DNPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>Loading...</td></tr>
+              <tr><td colSpan={10} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>Loading...</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No DN records</td></tr>
+              <tr><td colSpan={10} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No DN records</td></tr>
             ) : rows.map(row => {
               const s = String(row.status || "").toUpperCase();
-              const canShip = ["PENDING","RESERVED","PICKED","PACKED"].includes(s);
+              const canShip   = ["PENDING","RESERVED","PICKED","PACKED"].includes(s);
+              const canCancel = !["SHIPPED","CONFIRMED","CANCELLED"].includes(s);
               return (
                 <tr key={row.id} style={{ borderTop: "1px solid #e5e7eb" }}>
                   <td style={td}><span style={{ fontWeight: 600 }}>{row.dn_no ?? "-"}</span></td>
@@ -319,9 +349,33 @@ export default function DNPage() {
                   <td style={td}>{row.ship_to ?? "-"}</td>
                   <td style={{ ...td, textAlign: "right" }}>{row.qty_total ?? 0}</td>
                   <td style={td}><StatusBadge status={row.status} /></td>
-                  <td style={td}>{fmtDate(row.created_at)}</td>
-                  <td style={td}>{fmtDate(row.shipped_at)}</td>
-                  <td style={{ ...td, display: "flex", gap: 6 }}>
+                  <td style={td}>
+                    <DateCell
+                      dnId={row.id}
+                      field="planned_gi_date"
+                      value={row.planned_gi_date ?? null}
+                      editing={editingDate}
+                      onEdit={setEditingDate}
+                      onSave={handleDateSave}
+                      onCancel={() => setEditingDate(null)}
+                      updating={dateUpdating}
+                    />
+                  </td>
+                  <td style={td}>
+                    <DateCell
+                      dnId={row.id}
+                      field="planned_delivery_date"
+                      value={row.planned_delivery_date ?? null}
+                      editing={editingDate}
+                      onEdit={setEditingDate}
+                      onSave={handleDateSave}
+                      onCancel={() => setEditingDate(null)}
+                      updating={dateUpdating}
+                    />
+                  </td>
+                  <td style={td}>{fmtDate(row.created_at) || "-"}</td>
+                  <td style={td}>{fmtDate(row.shipped_at) || "-"}</td>
+                  <td style={{ ...td, display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <button onClick={() => router.push(`/outbound/dn/${row.id}`)} style={actionBtn}>
                       Open
                     </button>
@@ -342,6 +396,25 @@ export default function DNPage() {
                         style={{ ...actionBtn, background: "#111", color: "#fff", border: "none" }}
                       >
                         Ship
+                      </button>
+                    )}
+                    {canCancel && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`DN ${row.dn_no} 을 취소하시겠습니까?\n박스/패킹 정보가 초기화되고 예약 재고가 복원됩니다.`)) return;
+                          setWorking(true);
+                          try {
+                            const res = await fetch(`/api/dn/${row.id}/cancel`, { method: "POST" });
+                            const json = await res.json();
+                            if (!json?.ok) throw new Error(json?.error || "Failed");
+                            await load();
+                          } catch (e: any) { alert(e.message); }
+                          finally { setWorking(false); }
+                        }}
+                        disabled={working}
+                        style={{ ...actionBtn, color: "#991b1b", border: "1px solid #fecaca", background: "#fff5f5" }}
+                      >
+                        Cancel
                       </button>
                     )}
                   </td>
@@ -401,4 +474,68 @@ function resultBox(type: "success" | "error"): React.CSSProperties {
     color: type === "success" ? "#166534" : "#991b1b",
     border: `1px solid ${type === "success" ? "#bbf7d0" : "#fecaca"}`,
   };
+}
+
+/* ── 날짜 인라인 편집 셀 ── */
+type DateCellProps = {
+  dnId: string;
+  field: "planned_gi_date" | "planned_delivery_date";
+  value: string | null;
+  editing: { dnId: string; field: string; value: string } | null;
+  onEdit: (v: { dnId: string; field: "planned_gi_date" | "planned_delivery_date"; value: string }) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  updating: boolean;
+};
+
+function DateCell({ dnId, field, value, editing, onEdit, onSave, onCancel, updating }: DateCellProps) {
+  const isMe = editing?.dnId === dnId && editing?.field === field;
+
+  if (isMe) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <input
+          type="date"
+          value={editing.value}
+          onChange={e => onEdit({ dnId, field, value: e.target.value })}
+          style={{
+            padding: "3px 6px", border: "1px solid #6b7280", borderRadius: 5,
+            fontSize: 12, outline: "none", width: 130,
+          }}
+          autoFocus
+          onKeyDown={e => { if (e.key === "Enter") onSave(); if (e.key === "Escape") onCancel(); }}
+        />
+        <button
+          onClick={onSave}
+          disabled={updating}
+          style={{ padding: "2px 8px", fontSize: 11, border: "none", borderRadius: 4, background: "#111", color: "#fff", cursor: "pointer" }}
+        >
+          {updating ? "…" : "저장"}
+        </button>
+        <button
+          onClick={onCancel}
+          style={{ padding: "2px 6px", fontSize: 11, border: "1px solid #d1d5db", borderRadius: 4, background: "#fff", cursor: "pointer" }}
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, cursor: "default" }}>
+      <span style={{ fontSize: 13 }}>{value ? new Date(value).toLocaleDateString("ko-KR") : "-"}</span>
+      <button
+        onClick={() => onEdit({ dnId, field, value: value ?? "" })}
+        title="날짜 수정"
+        style={{
+          padding: "1px 5px", fontSize: 11, border: "1px solid #e5e7eb",
+          borderRadius: 4, background: "#f9fafb", color: "#6b7280",
+          cursor: "pointer", lineHeight: 1.4,
+        }}
+      >
+        ✏️
+      </button>
+    </div>
+  );
 }

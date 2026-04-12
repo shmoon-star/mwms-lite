@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate as fmtDateYmd } from "@/lib/fmt";
 
 type DnRow = {
   id: string;
@@ -11,6 +12,8 @@ type DnRow = {
   qty_shipped: number;
   balance: number;
   created_at: string | null;
+  planned_gi_date: string | null;
+  planned_delivery_date: string | null;
 };
 
 type Summary = {
@@ -241,6 +244,8 @@ export default function WmsDnPage() {
               <th className="px-3 py-2">Ordered</th>
               <th className="px-3 py-2">Shipped</th>
               <th className="px-3 py-2">Balance</th>
+              <th className="px-3 py-2">Planned GI</th>
+              <th className="px-3 py-2">Planned Ship</th>
               <th className="px-3 py-2">Created</th>
               <th className="px-3 py-2">Action</th>
             </tr>
@@ -248,13 +253,13 @@ export default function WmsDnPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={10} className="px-3 py-6 text-center text-gray-500">
                   Loading...
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={10} className="px-3 py-6 text-center text-gray-500">
                   No open DN
                 </td>
               </tr>
@@ -273,7 +278,9 @@ export default function WmsDnPage() {
                   <td className="px-3 py-2">{row.qty_ordered}</td>
                   <td className="px-3 py-2">{row.qty_shipped}</td>
                   <td className="px-3 py-2">{row.balance}</td>
-                  <td className="px-3 py-2">{fmtDate(row.created_at)}</td>
+                  <td className="px-3 py-2">{fmtDate(row.planned_gi_date)}</td>
+                  <td className="px-3 py-2">{fmtDate(row.planned_delivery_date)}</td>
+                  <td className="px-3 py-2">{fmtDateYmd(row.created_at) || "-"}</td>
                   <td className="px-3 py-2">
                     <Link
                       href={`/wms/dn/${row.id}`}

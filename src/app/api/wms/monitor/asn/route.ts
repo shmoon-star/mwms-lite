@@ -37,7 +37,7 @@ function deriveAsnStatus(expected: number, received: number) {
 
 function isClosedStatus(status?: string | null) {
   const s = String(status || "").toUpperCase();
-  return ["FULL_RECEIVED", "CONFIRMED", "CLOSED", "RECEIVED"].includes(s);
+  return ["FULL_RECEIVED", "CONFIRMED", "CLOSED", "RECEIVED", "CANCELLED"].includes(s);
 }
 
 async function loadAsnLines(sb: any, asnIds: string[]) {

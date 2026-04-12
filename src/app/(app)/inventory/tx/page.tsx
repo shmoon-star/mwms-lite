@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type TxRow = {
   id: string;
@@ -93,7 +94,7 @@ export default function InventoryTxPage() {
           <tbody>
             {rows.map((row) => (
               <tr key={row.id}>
-                <td style={td}>{row.created_at ?? "-"}</td>
+                <td style={td}>{fmtDate(row.created_at) || "-"}</td>
                 <td style={td}>{row.sku}</td>
                 <td style={td}>{row.tx_type}</td>
                 <td style={td}>{row.qty_delta}</td>

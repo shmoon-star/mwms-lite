@@ -34,8 +34,8 @@ export async function POST(req: Request, context: { params: any }) {
     }
 
     const { data: lines, error: lErr } = await sb
-      .from("dn_line")
-      .select("id, sku, qty, qty_picked, qty_packed, qty_shipped")
+      .from("dn_lines")
+      .select("id, sku, qty_ordered, qty_shipped")
       .eq("dn_id", id);
 
     if (lErr) throw lErr;
@@ -45,19 +45,17 @@ export async function POST(req: Request, context: { params: any }) {
 
     for (const line of lines) {
       const sku = String(line.sku ?? "").trim();
-      const qty = Number(line.qty ?? 0);
-      const picked = Number(line.qty_picked ?? 0);
-      const packed = Number(line.qty_packed ?? 0);
+      const qty = Number(line.qty_ordered ?? 0);
       const shipped = Number(line.qty_shipped ?? 0);
 
       if (!sku || qty <= 0) continue;
       if (shipped > 0) continue;
 
-      const shipQty = packed > 0 ? packed : picked > 0 ? picked : qty;
+      const shipQty = qty;
 
       const { data: inv, error: invErr } = await sb
         .from("inventory")
-        .select("sku, qty_onhand, qty_reserved, allocated")
+        .select("sku, qty_onhand, qty_reserved")
         .eq("sku", sku)
         .single();
 
@@ -84,7 +82,7 @@ export async function POST(req: Request, context: { params: any }) {
       if (invUpdErr) throw invUpdErr;
 
       const { error: lineUpdErr } = await sb
-        .from("dn_line")
+        .from("dn_lines")
         .update({
           qty_shipped: shipQty,
         })

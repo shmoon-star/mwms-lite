@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type OpenDNRow = {
   dn_id: string;
@@ -131,10 +132,10 @@ export default function OpenDNPage() {
                 <td style={td}>{row.qty_picked}</td>
                 <td style={td}>{row.qty_packed}</td>
                 <td style={td}>{row.qty_shipped}</td>
-                <td style={td}>{row.header_created_at ?? "-"}</td>
-                <td style={td}>{row.reserved_at ?? "-"}</td>
-                <td style={td}>{row.picked_at ?? "-"}</td>
-                <td style={td}>{row.packed_at ?? "-"}</td>
+                <td style={td}>{fmtDate(row.header_created_at) || "-"}</td>
+                <td style={td}>{fmtDate(row.reserved_at) || "-"}</td>
+                <td style={td}>{fmtDate(row.picked_at) || "-"}</td>
+                <td style={td}>{fmtDate(row.packed_at) || "-"}</td>
                 <td style={td}>
                   <a href={`/outbound/dn/${row.dn_id}`}>Open</a>
                 </td>

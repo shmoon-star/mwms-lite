@@ -38,6 +38,9 @@ export async function GET(req: Request) {
       .select("id, sku, tx_type, qty_delta, ref_type, ref_id, note, created_at")
       .order("created_at", { ascending: false });
 
+    // DN_RESERVE는 물리적 재고 이동이 아니므로 Ledger에서 제외
+    query = query.neq("tx_type", "DN_RESERVE");
+
     if (sku) query = query.eq("sku", sku);
     if (txType) query = query.eq("tx_type", txType);
     if (refType) query = query.eq("ref_type", refType);

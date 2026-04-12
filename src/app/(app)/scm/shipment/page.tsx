@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type Row = {
   id: string;
@@ -12,6 +13,7 @@ type Row = {
   etd: string | null;
   atd: string | null;
   ata: string | null;
+  buyer_gr_date: string | null;
   vessel_name: string | null;
   container_no: string | null;
   seal_no: string | null;
@@ -29,16 +31,8 @@ type Row = {
   ship_from_summary: string;
   ship_to_summary: string;
   dn_summary: string;
+  doc_count: number;
 };
-
-function fmtDate(v?: string | null) {
-  if (!v) return "-";
-  try {
-    return new Date(v).toLocaleString();
-  } catch {
-    return v;
-  }
-}
 
 function safeNum(v: unknown) {
   const n = Number(v ?? 0);
@@ -242,8 +236,10 @@ export default function ScmShipmentPage() {
               <th className="px-3 py-3">ETA</th>
               <th className="px-3 py-3">ATD</th>
               <th className="px-3 py-3">ATA</th>
+              <th className="px-3 py-3">GR Date</th>
               <th className="px-3 py-3">Vessel</th>
               <th className="px-3 py-3">Container</th>
+              <th className="px-3 py-3">Files</th>
               <th className="px-3 py-3">Created At</th>
               <th className="px-3 py-3">Action</th>
             </tr>
@@ -252,13 +248,13 @@ export default function ScmShipmentPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={19} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={20} className="px-3 py-8 text-center text-gray-500">
                   Loading...
                 </td>
               </tr>
             ) : filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={19} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={20} className="px-3 py-8 text-center text-gray-500">
                   No shipment
                 </td>
               </tr>
@@ -289,9 +285,19 @@ export default function ScmShipmentPage() {
                   <td className="px-3 py-2">{row.eta || "-"}</td>
                   <td className="px-3 py-2">{row.atd || "-"}</td>
                   <td className="px-3 py-2">{row.ata || "-"}</td>
+                  <td className="px-3 py-2">{row.buyer_gr_date || "-"}</td>
                   <td className="px-3 py-2">{row.vessel_name || "-"}</td>
                   <td className="px-3 py-2">{row.container_no || "-"}</td>
-                  <td className="px-3 py-2">{fmtDate(row.created_at)}</td>
+                  <td className="px-3 py-2">
+                    {row.doc_count > 0 ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        📂 {row.doc_count}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300">-</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">{fmtDate(row.created_at) || "-"}</td>
                   <td className="px-3 py-2">
                     <Link
                       href={`/scm/shipment/${row.id}`}

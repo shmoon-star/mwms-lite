@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type POLine = {
   id: string;
@@ -387,7 +388,7 @@ export default function PODetailClient({ id }: { id: string }) {
         <b>Status:</b> {statusLabel}
       </div>
       <div style={{ marginBottom: 16 }}>
-        <b>Created At:</b> {po.created_at ?? "-"}
+        <b>Created At:</b> {fmtDate(po.created_at) || "-"}
       </div>
 
       {renderEtaSection()}
@@ -413,7 +414,7 @@ export default function PODetailClient({ id }: { id: string }) {
               <td style={td}>{line.sku}</td>
               <td style={td}>{line.qty}</td>
               <td style={td}>{line.qty_ordered ?? 0}</td>
-              <td style={td}>{line.created_at ?? "-"}</td>
+              <td style={td}>{fmtDate(line.created_at) || "-"}</td>
             </tr>
           ))}
         </tbody>

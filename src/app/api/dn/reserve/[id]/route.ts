@@ -44,15 +44,15 @@ export async function POST(_req: Request, ctx: Ctx) {
     }
 
     const { data: lines, error: lErr } = await sb
-      .from("dn_line")
-      .select("id, sku, qty")
+      .from("dn_lines")
+      .select("id, sku, qty_ordered")
       .eq("dn_id", dnId);
 
     if (lErr) throw lErr;
 
     for (const line of lines ?? []) {
       const sku = line.sku;
-      const qty = Number(line.qty ?? 0);
+      const qty = Number(line.qty_ordered ?? 0);
 
       const { data: inv, error: invSelErr } = await sb
         .from("inventory")

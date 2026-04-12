@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate as fmtDateYmd } from "@/lib/fmt";
 
 type Row = {
   id: string;
@@ -12,6 +13,7 @@ type Row = {
   etd: string | null;
   atd: string | null;
   ata: string | null;
+  buyer_gr_date: string | null;
   vessel_name: string | null;
   container_no: string | null;
   seal_no: string | null;
@@ -26,6 +28,7 @@ type Row = {
   ship_from_summary: string;
   ship_to_summary: string;
   dn_summary: string;
+  doc_count: number;
 };
 
 function fmtDate(v?: string | null) {
@@ -197,16 +200,16 @@ export default function BuyerShipmentPage() {
         <table style={{ minWidth: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead style={{ background: "#f9fafb" }}>
             <tr>
-              {["Shipment No","Status","Ship From","Ship To","DN","Pallet","Boxes","Qty","Weight","CBM","BL No","ETD","ETA","ATD","ATA","Vessel","Container","Created"].map((h) => (
+              {["Shipment No","Status","Ship From","Ship To","DN","Pallet","Boxes","Qty","Weight","CBM","BL No","ETD","ETA","ATD","ATA","GR Date","Vessel","Container","Files","Created"].map((h) => (
                 <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={18} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>Loading...</td></tr>
+              <tr><td colSpan={19} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>Loading...</td></tr>
             ) : filteredRows.length === 0 ? (
-              <tr><td colSpan={18} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No shipments found</td></tr>
+              <tr><td colSpan={19} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No shipments found</td></tr>
             ) : (
               filteredRows.map((row) => (
                 <tr key={row.id} style={{ borderTop: "1px solid #e5e7eb" }}>
@@ -232,9 +235,21 @@ export default function BuyerShipmentPage() {
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{row.eta || "-"}</td>
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{row.atd || "-"}</td>
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{row.ata || "-"}</td>
+                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{row.buyer_gr_date || "-"}</td>
                   <td style={{ padding: "10px 12px" }}>{row.vessel_name || "-"}</td>
                   <td style={{ padding: "10px 12px" }}>{row.container_no || "-"}</td>
-                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{fmtDate(row.created_at)}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {row.doc_count > 0 ? (
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                        padding: "2px 8px", borderRadius: 9999, fontSize: 12, fontWeight: 600,
+                        background: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe",
+                      }}>
+                        📂 {row.doc_count}
+                      </span>
+                    ) : "-"}
+                  </td>
+                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{fmtDateYmd(row.created_at) || "-"}</td>
                 </tr>
               ))
             )}

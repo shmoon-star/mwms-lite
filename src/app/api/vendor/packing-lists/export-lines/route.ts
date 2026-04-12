@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 function escapeCsv(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -153,7 +154,7 @@ export async function GET(req: NextRequest) {
 
     if (headerIds.length === 0) {
       const emptyCsv =
-        "pl_no,po_no,eta,status,line_no,sku,description,qty,carton_no,style_code,color,size,created_at,updated_at\n";
+        "pl_no,po_no,eta,status,line_no,sku,barcode,description,qty,carton_no,style_code,color,size,created_at,updated_at\n";
 
       return new NextResponse(emptyCsv, {
         status: 200,
@@ -189,6 +190,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const skuList = Array.from(new Set((lines ?? []).map((l: any) => l.sku).filter(Boolean)));
+    const productMaster = await loadProductsBySkus(skuList, supabase);
+
     const headerMap = new Map(
       filteredHeaders.map((header) => [header.id, header])
     );
@@ -200,6 +204,7 @@ export async function GET(req: NextRequest) {
       "status",
       "line_no",
       "sku",
+      "barcode",
       "description",
       "qty",
       "carton_no",
@@ -220,6 +225,7 @@ export async function GET(req: NextRequest) {
         escapeCsv(header?.status),
         escapeCsv(line.line_no),
         escapeCsv(line.sku),
+        escapeCsv(productMaster.barcodeOf(line.sku) ?? ""),
         escapeCsv(line.description),
         escapeCsv(line.qty),
         escapeCsv(line.carton_no),

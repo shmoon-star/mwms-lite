@@ -172,8 +172,9 @@ export async function GET(_req: NextRequest) {
       );
     }
 
-    // 첨부파일 수 조회
     const plIds = headerRows.map((r) => r.id);
+
+    // 첨부파일 수 조회
     let docCountMap = new Map<string, number>();
     if (plIds.length > 0) {
       const { data: docCounts } = await supabase
@@ -185,9 +186,24 @@ export async function GET(_req: NextRequest) {
       }
     }
 
+    // ASN 조회 (source_type = PACKING_LIST, source_id = pl.id)
+    type AsnRow = { id: string; asn_no: string | null; source_id: string | null };
+    let asnMap = new Map<string, AsnRow>();
+    if (plIds.length > 0) {
+      const { data: asnRows } = await supabase
+        .from("asn_header")
+        .select("id, asn_no, source_id")
+        .eq("source_type", "PACKING_LIST")
+        .in("source_id", plIds);
+      for (const row of (asnRows ?? []) as AsnRow[]) {
+        if (row.source_id) asnMap.set(row.source_id, row);
+      }
+    }
+
     const items = headerRows.map((row) => {
       const vendor = row.vendor_id ? vendorMap.get(row.vendor_id) ?? null : null;
       const po = row.po_no ? poMap.get(row.po_no) ?? null : null;
+      const asn = asnMap.get(row.id) ?? null;
 
       return {
         id: row.id,
@@ -200,8 +216,8 @@ export async function GET(_req: NextRequest) {
         vendor_name: vendor?.vendor_name ?? null,
         vendor_display: formatVendorDisplay(vendor, row.vendor_id),
         status: row.status || "-",
-        asn_id: null,
-        asn_no: "-",
+        asn_id: asn?.id ?? null,
+        asn_no: asn?.asn_no ?? "-",
         eta: row.eta || "-",
         created_at: row.created_at,
         updated_at: row.updated_at,

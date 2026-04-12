@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type GrListItem = {
   id: string;
@@ -23,13 +24,6 @@ type GrListResponse = {
   items?: GrListItem[];
   error?: string;
 };
-
-function fmtDate(value: string | null | undefined) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
-}
 
 function safeNum(v: unknown) {
   const n = Number(v ?? 0);
@@ -317,8 +311,8 @@ export default function InboundGrPage() {
                       </td>
                       <td className="px-3 py-3 text-right">{expected}</td>
                       <td className="px-3 py-3 text-right">{received}</td>
-                      <td className="px-3 py-3">{fmtDate(row.created_at)}</td>
-                      <td className="px-3 py-3">{fmtDate(row.confirmed_at)}</td>
+                      <td className="px-3 py-3">{fmtDate(row.created_at) || "-"}</td>
+                      <td className="px-3 py-3">{fmtDate(row.confirmed_at) || "-"}</td>
                       <td className="px-3 py-3">
                         <Link
                           href={`/inbound/gr/${row.id}`}

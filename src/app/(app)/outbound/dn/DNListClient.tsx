@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { fmtDate } from "@/lib/fmt";
 
 type DNHeader = {
   id: string;
@@ -161,8 +162,8 @@ export default function DNListClient() {
   <td style={td}>{row.ship_to ?? "-"}</td>
   <td style={td}>{row.qty_total ?? 0}</td>
   <td style={td}>{mapStatusLabel(row.status)}</td>
-  <td style={td}>{row.created_at ?? "-"}</td>
-  <td style={td}>{row.confirmed_at ?? "-"}</td>
+  <td style={td}>{fmtDate(row.created_at) || "-"}</td>
+  <td style={td}>{fmtDate(row.confirmed_at) || "-"}</td>
   <td style={td}>
     <button onClick={() => router.push(`/outbound/dn/${row.id}`)}>
       Open

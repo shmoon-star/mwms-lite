@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
+import { fmtDate } from "@/lib/fmt";
 import PackingListFilterForm from "@/components/admin/packing-list-filter-form";
 import StatusBadge from "@/components/common/status-badge";
 import Pagination from "@/components/common/pagination";
@@ -154,14 +155,10 @@ export default async function AdminPackingListsPage({
                     <StatusBadge status={item.status} />
                   </td>
                   <td className="p-3">
-                    {item.submitted_at
-                      ? new Date(item.submitted_at).toLocaleString()
-                      : "-"}
+                    {fmtDate(item.submitted_at) || "-"}
                   </td>
                   <td className="p-3">
-                    {item.updated_at
-                      ? new Date(item.updated_at).toLocaleString()
-                      : "-"}
+                    {fmtDate(item.updated_at) || "-"}
                   </td>
                 </tr>
               ))

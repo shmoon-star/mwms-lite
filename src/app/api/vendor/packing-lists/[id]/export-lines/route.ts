@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 type RouteContext = {
   params: Promise<{
@@ -90,9 +91,13 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     .eq("packing_list_id", id)
     .order("line_no");
 
+  const skuList = (lines ?? []).map((l: any) => l.sku).filter(Boolean);
+  const productMaster = await loadProductsBySkus(skuList, supabase);
+
   const headers = [
     "line_no",
     "sku",
+    "barcode",
     "description",
     "qty",
     "carton_no",
@@ -105,6 +110,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
   const rows = (lines ?? []).map((l) => [
     escapeCsv(l.line_no),
     escapeCsv(l.sku),
+    escapeCsv(productMaster.barcodeOf(l.sku) ?? ""),
     escapeCsv(l.description),
     escapeCsv(l.qty),
     escapeCsv(l.carton_no),

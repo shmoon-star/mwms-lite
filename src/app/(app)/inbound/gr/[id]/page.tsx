@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { fmtDate } from "@/lib/fmt";
 
 type GrLine = {
   id: string;
@@ -38,13 +39,6 @@ const GR_VARIANCE_REASONS = [
 ] as const;
 
 type VarianceReason = (typeof GR_VARIANCE_REASONS)[number]["value"];
-
-function fmtDate(value: string | null) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
-}
 
 function resultLabel(expected: number, received: number) {
   if (received === expected) return "MATCH";
@@ -238,8 +232,8 @@ export default function GrDetailPage() {
               )}
             </div>
             <div>Vendor: {item.vendor_name || "-"}</div>
-            <div>Created: {fmtDate(item.created_at)}</div>
-            <div>Confirmed: {fmtDate(item.confirmed_at)}</div>
+            <div>Created: {fmtDate(item.created_at) || "-"}</div>
+            <div>Confirmed: {fmtDate(item.confirmed_at) || "-"}</div>
           </div>
         </div>
 

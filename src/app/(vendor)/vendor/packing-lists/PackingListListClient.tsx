@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate as fmtDateYmd } from "@/lib/fmt";
 
 type PackingListRow = {
   id: string;
@@ -221,8 +222,8 @@ export default function PackingListListClient() {
                       "-"
                     )}
                   </td>
-                  <td style={td}>{fmtDate(row.created_at)}</td>
-                  <td style={td}>{fmtDate(row.finalized_at)}</td>
+                  <td style={td}>{fmtDateYmd(row.created_at) || "-"}</td>
+                  <td style={td}>{fmtDateYmd(row.finalized_at) || "-"}</td>
                   <td style={td}>
                     <Link href={`/vendor/packing-lists/${row.id}`}>
                       <button>Open</button>

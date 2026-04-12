@@ -350,6 +350,64 @@ export async function notifyEtaChanged(params: {
   });
 }
 
+export async function notifyPoCancelled(params: {
+  poNo: string;
+  vendorId: string;
+  eta: string | null;
+  cancelledAsnCount?: number;
+  cancelledPlCount?: number;
+}) {
+  const vendor = await getVendorInfo(params.vendorId);
+  const recipients = await getVendorRecipients(params.vendorId);
+
+  return sendMail({
+    to: recipients,
+    subject: `[mwms-lite] PO 취소 안내: ${params.poNo}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">
+        <p>안녕하세요, ${escapeHtml(vendor.vendor_name || vendor.vendor_code || "")} 담당자님.</p>
+        <p>아래 PO가 <strong style="color:#991b1b;">취소(CANCELLED)</strong> 처리되었습니다.</p>
+
+        <table style="border-collapse:collapse; margin: 16px 0;">
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">PO No</td>
+            <td style="padding: 8px 0; font-weight: bold;">${escapeHtml(params.poNo)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">Vendor</td>
+            <td style="padding: 8px 0;">${escapeHtml(vendor.vendor_name || "-")}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">ETA</td>
+            <td style="padding: 8px 0;">${escapeHtml(params.eta || "-")}</td>
+          </tr>
+          ${
+            (params.cancelledAsnCount ?? 0) > 0
+              ? `<tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">취소된 ASN</td>
+            <td style="padding: 8px 0;">${params.cancelledAsnCount}건</td>
+          </tr>`
+              : ""
+          }
+          ${
+            (params.cancelledPlCount ?? 0) > 0
+              ? `<tr>
+            <td style="padding: 8px 16px 8px 0; color: #666;">취소된 패킹리스트</td>
+            <td style="padding: 8px 0;">${params.cancelledPlCount}건 (작성 중이던 내용은 조회 가능합니다)</td>
+          </tr>`
+              : ""
+          }
+        </table>
+
+        <p style="color: #991b1b;">
+          해당 PO에 연결된 패킹리스트 등록 및 ASN 처리는 더 이상 진행하지 않아도 됩니다.
+        </p>
+        <p>문의사항이 있으시면 담당자에게 연락해 주세요.</p>
+      </div>
+    `,
+  });
+}
+
 export async function notifyAsnCreatedFromPackingList(params: {
   packingListId: string;
   packingListNo: string;

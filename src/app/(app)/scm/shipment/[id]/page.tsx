@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type ShipmentHeader = {
   id: string;
@@ -12,6 +13,7 @@ type ShipmentHeader = {
   etd: string | null;
   atd: string | null;
   ata: string | null;
+  buyer_gr_date: string | null;
   vessel_name: string | null;
   container_no: string | null;
   seal_no: string | null;
@@ -60,15 +62,6 @@ type BoxRow = {
   scanned_at: string | null;
 };
 
-function fmtDate(v?: string | null) {
-  if (!v) return "-";
-  try {
-    return new Date(v).toLocaleString();
-  } catch {
-    return v;
-  }
-}
-
 function safeNum(v: unknown) {
   const n = Number(v ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -100,11 +93,18 @@ export default function ScmShipmentDetailPage({
   const [selectedPalletId, setSelectedPalletId] = useState("");
   const [boxKeyword, setBoxKeyword] = useState("");
 
+  // Files
+  type ShipmentFile = { id: string; file_name: string; file_size: number; mime_type: string | null; storage_path: string; uploaded_at: string | null };
+  const [files, setFiles] = useState<ShipmentFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [blNo, setBlNo] = useState("");
   const [eta, setEta] = useState("");
   const [etd, setEtd] = useState("");
   const [atd, setAtd] = useState("");
   const [ata, setAta] = useState("");
+  const [buyerGrDate, setBuyerGrDate] = useState("");
   const [vesselName, setVesselName] = useState("");
   const [containerNo, setContainerNo] = useState("");
   const [sealNo, setSealNo] = useState("");
@@ -141,6 +141,7 @@ export default function ScmShipmentDetailPage({
       setEtd(nextHeader?.etd || "");
       setAtd(nextHeader?.atd || "");
       setAta(nextHeader?.ata || "");
+      setBuyerGrDate(nextHeader?.buyer_gr_date || "");
       setVesselName(nextHeader?.vessel_name || "");
       setContainerNo(nextHeader?.container_no || "");
       setSealNo(nextHeader?.seal_no || "");
@@ -162,7 +163,58 @@ export default function ScmShipmentDetailPage({
   useEffect(() => {
     if (!id) return;
     load(id);
+    loadFiles(id);
   }, [id]);
+
+  async function loadFiles(targetId: string) {
+    try {
+      const res = await fetch(`/api/scm/shipment/${targetId}/files`, { cache: "no-store" });
+      const json = await res.json();
+      if (json?.ok) setFiles(json.files ?? []);
+    } catch {}
+  }
+
+  async function uploadFile(file: File) {
+    if (!id) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/scm/shipment/${id}/files`, { method: "POST", body: fd });
+      const json = await res.json();
+      if (!json?.ok) { alert(json?.error || "Upload failed"); return; }
+      await loadFiles(id);
+    } catch (e: any) {
+      alert(e?.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function deleteFile(fileId: string) {
+    if (!id || !confirm("파일을 삭제하시겠습니까?")) return;
+    await fetch(`/api/scm/shipment/${id}/files?fileId=${fileId}`, { method: "DELETE" });
+    await loadFiles(id);
+  }
+
+  async function downloadFile(storagePath: string, fileName: string) {
+    try {
+      const res = await fetch("/api/scm/shipment-files/signed-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storage_path: storagePath, file_name: fileName }),
+      });
+      const json = await res.json();
+      if (json?.url) {
+        const a = document.createElement("a");
+        a.href = json.url;
+        a.download = fileName;
+        a.target = "_blank";
+        a.click();
+      }
+    } catch {}
+  }
 
   async function saveHeader() {
     if (!id) return;
@@ -180,6 +232,7 @@ export default function ScmShipmentDetailPage({
           etd,
           atd,
           ata,
+          buyer_gr_date: buyerGrDate,
           vessel_name: vesselName,
           container_no: containerNo,
           seal_no: sealNo,
@@ -394,6 +447,16 @@ export default function ScmShipmentDetailPage({
             </div>
 
             <div>
+              <label className="mb-1 block font-medium">Buyer GR Date</label>
+              <input
+                type="date"
+                value={buyerGrDate}
+                onChange={(e) => setBuyerGrDate(e.target.value)}
+                className="w-full rounded border px-3 py-2"
+              />
+            </div>
+
+            <div>
               <label className="mb-1 block font-medium">Vessel</label>
               <input
                 value={vesselName}
@@ -431,10 +494,10 @@ export default function ScmShipmentDetailPage({
             </div>
 
             <div className="border-t pt-3 text-xs text-gray-500">
-              <div>Created At: {fmtDate(header.created_at)}</div>
-              <div>Updated At: {fmtDate(header.updated_at)}</div>
-              <div>Closed At: {fmtDate(header.closed_at)}</div>
-              <div>Cancelled At: {fmtDate(header.cancelled_at)}</div>
+              <div>Created At: {fmtDate(header.created_at) || "-"}</div>
+              <div>Updated At: {fmtDate(header.updated_at) || "-"}</div>
+              <div>Closed At: {fmtDate(header.closed_at) || "-"}</div>
+              <div>Cancelled At: {fmtDate(header.cancelled_at) || "-"}</div>
             </div>
           </div>
         </div>
@@ -451,8 +514,8 @@ export default function ScmShipmentDetailPage({
                   <div>Status: {row.status || "-"}</div>
                   <div>Ship From: {row.ship_from || "-"}</div>
                   <div>Ship To: {row.ship_to || "-"}</div>
-                  <div>Created: {fmtDate(row.created_at)}</div>
-                  <div>Confirmed: {fmtDate(row.confirmed_at)}</div>
+                  <div>Created: {fmtDate(row.created_at) || "-"}</div>
+                  <div>Confirmed: {fmtDate(row.confirmed_at) || "-"}</div>
                 </div>
               ))
             )}
@@ -520,7 +583,7 @@ export default function ScmShipmentDetailPage({
                     <td className="px-3 py-2">{row.length}</td>
                     <td className="px-3 py-2">{row.width}</td>
                     <td className="px-3 py-2">{row.height}</td>
-                    <td className="px-3 py-2">{fmtDate(row.created_at)}</td>
+                    <td className="px-3 py-2">{fmtDate(row.created_at) || "-"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -569,7 +632,7 @@ export default function ScmShipmentDetailPage({
 
                   return (
                     <tr key={row.id} className="border-t">
-                      <td className="px-3 py-2">{fmtDate(row.scanned_at)}</td>
+                      <td className="px-3 py-2">{fmtDate(row.scanned_at) || "-"}</td>
                       <td className="px-3 py-2">{pallet?.pallet_no || "-"}</td>
                       <td className="px-3 py-2 font-medium">{row.box_no || "-"}</td>
                       <td className="px-3 py-2">{row.carton_no || "-"}</td>
@@ -582,6 +645,74 @@ export default function ScmShipmentDetailPage({
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      {/* ── Shipment Files ─────────────────────────────────────────────────── */}
+      <div className="rounded-xl border bg-white p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold">
+            Shipment Files
+            {files.length > 0 && (
+              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">{files.length}</span>
+            )}
+          </h2>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              {uploading ? "Uploading..." : "+ Upload File"}
+            </button>
+          </div>
+        </div>
+
+        {files.length === 0 ? (
+          <div className="py-6 text-center text-sm text-gray-400">파일이 없습니다. B/L, 패킹리스트 등 서류를 업로드하세요.</div>
+        ) : (
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 uppercase">
+                <th className="py-2 pr-4">File Name</th>
+                <th className="py-2 pr-4">Size</th>
+                <th className="py-2 pr-4">Uploaded At</th>
+                <th className="py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((f) => (
+                <tr key={f.id} className="border-t hover:bg-gray-50/50">
+                  <td className="py-2 pr-4 font-medium">
+                    <button
+                      onClick={() => downloadFile(f.storage_path, f.file_name)}
+                      className="text-blue-600 hover:underline text-left"
+                    >
+                      📄 {f.file_name}
+                    </button>
+                  </td>
+                  <td className="py-2 pr-4 text-gray-500 text-xs">
+                    {f.file_size ? `${(f.file_size / 1024).toFixed(1)} KB` : "-"}
+                  </td>
+                  <td className="py-2 pr-4 text-gray-500 text-xs">{fmtDate(f.uploaded_at) || "-"}</td>
+                  <td className="py-2">
+                    <button
+                      onClick={() => deleteFile(f.id)}
+                      className="text-xs text-red-400 hover:text-red-600"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </div>

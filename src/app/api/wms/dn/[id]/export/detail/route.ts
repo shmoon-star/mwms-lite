@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -86,19 +87,7 @@ export async function GET(_req: Request, { params }: Params) {
       )
     );
 
-let productRows: any[] = [];
-if (skuList.length > 0) {
-  const { data: products, error: productError } = await sb
-    .from("products")
-    .select("sku, name, brand")
-    .in("sku", skuList);
-
-  if (productError) {
-    return NextResponse.json({ ok: false, error: productError.message }, { status: 500 });
-  }
-
-  productRows = products || [];
-}
+    const productMaster = await loadProductsBySkus(skuList, sb);
 
 const lineDescMap = new Map<string, string>();
 for (const line of lines || []) {
@@ -106,14 +95,6 @@ for (const line of lines || []) {
     line.sku,
     line.description || line.product_name || line.item_name || ""
   );
-}
-
-const productMap = new Map<string, { brand: string; name: string }>();
-for (const product of productRows) {
-  productMap.set(product.sku, {
-    brand: product.brand || "",
-    name: product.name || "",
-  });
 }
 
     const boxMap = new Map<string, any>();
@@ -129,6 +110,7 @@ for (const product of productRows) {
       "box_weight_kg",
       "box_status",
       "sku",
+      "barcode",
       "brand",
       "description",
       "qty",
@@ -139,14 +121,11 @@ for (const product of productRows) {
 
 const rows = boxItems.map((item) => {
   const box = boxMap.get(item.dn_box_id);
-  const product = productMap.get(item.sku);
+  const p = productMaster.resolve(item.sku);
 
-  const description =
-    lineDescMap.get(item.sku) ||
-    product?.name ||
-    "";
-
-  const brand = product?.brand || "";
+  const description = lineDescMap.get(item.sku) || p?.name || "";
+  const brand = p?.brand || "";
+  const barcode = p?.barcode || "";
 
   return [
     header.dn_no || "",
@@ -156,6 +135,7 @@ const rows = boxItems.map((item) => {
     box?.box_weight_kg ?? "",
     box?.status || "",
     item.sku || "",
+    barcode,
     brand,
     description,
     item.qty ?? "",

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type GRLine = {
   id: string;
@@ -193,10 +194,10 @@ export default function GRDetailClient({ id }: { id: string }) {
               <b>Vendor:</b> {gr.vendor_name ?? "-"}
             </div>
             <div>
-              <b>Created:</b> {gr.created_at ?? "-"}
+              <b>Created:</b> {fmtDate(gr.created_at) || "-"}
             </div>
             <div>
-              <b>Confirmed:</b> {gr.confirmed_at ?? "-"}
+              <b>Confirmed:</b> {fmtDate(gr.confirmed_at) || "-"}
             </div>
           </div>
         </div>

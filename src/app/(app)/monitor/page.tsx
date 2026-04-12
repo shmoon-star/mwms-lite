@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type FilterType = "ALL" | "OPEN" | "CLOSED";
 
@@ -69,9 +70,40 @@ type DNRow = {
   status?: string | null;
   created_at?: string | null;
   confirmed_at?: string | null;
+  shipped_at?: string | null;
   ship_from?: string | null;
   ship_to?: string | null;
   qty?: number | null;
+  planned_gi_date?: string | null;
+  planned_delivery_date?: string | null;
+};
+
+type ShipmentDnItem = {
+  id: string;
+  dn_no: string | null;
+  status: string | null;
+  ship_from: string | null;
+  ship_to: string | null;
+  planned_gi_date: string | null;
+  planned_delivery_date: string | null;
+  shipped_at: string | null;
+};
+
+type ShipmentRow = {
+  id: string;
+  shipment_no: string | null;
+  status: string | null;
+  bl_no: string | null;
+  eta: string | null;
+  etd: string | null;
+  vessel_name: string | null;
+  container_no: string | null;
+  created_at: string | null;
+  closed_at: string | null;
+  dn_count: number;
+  pallet_count: number;
+  dn_list: ShipmentDnItem[];
+  is_closed: boolean;
 };
 
 type MonitorApiResponse = {
@@ -114,31 +146,21 @@ type MonitorApiResponse = {
 type SummaryCardProps = {
   title: string;
   total: number;
+  totalQty?: number;
+  countUnit?: string;  // e.g. "PLs", "ASNs", "GRs", "DNs"
+  qtyLabel?: string;   // e.g. "qty", "received", "DNs"
   open: number;
+  openQty?: number;
   closed: number;
+  closedQty?: number;
 };
 
 type SummaryState = {
-  packing_list: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  asn: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  gr: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  dn: {
-    total: number;
-    open: number;
-    closed: number;
-  };
+  packing_list: { total: number; open: number; closed: number };
+  asn: { total: number; open: number; closed: number };
+  gr: { total: number; open: number; closed: number };
+  dn: { total: number; open: number; closed: number };
+  shipment: { total: number; open: number; closed: number };
 };
 
 type ASNLookupRow = {
@@ -151,23 +173,68 @@ type ASNLookupRow = {
   vendor_name?: string | null;
 };
 
-function SummaryCard({ title, total, open, closed }: SummaryCardProps) {
+function SummaryCard({
+  title,
+  total, totalQty,
+  countUnit = "cases", qtyLabel = "qty",
+  open, openQty,
+  closed, closedQty,
+}: SummaryCardProps) {
   return (
     <div
       style={{
         border: "1px solid #ddd",
         borderRadius: 8,
-        padding: 16,
-        minWidth: 220,
+        padding: "14px 16px",
+        minWidth: 200,
         background: "#fff",
       }}
     >
-      <div style={{ fontSize: 14, color: "#666", marginBottom: 12 }}>{title}</div>
-      <div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1, marginBottom: 12 }}>
-        {total}
+      {/* Title */}
+      <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 500 }}>{title}</div>
+
+      {/* Big number row */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }}>{total.toLocaleString()}</span>
+        <span style={{ fontSize: 12, color: "#9ca3af" }}>{countUnit}</span>
+        {totalQty !== undefined && (
+          <>
+            <span style={{ fontSize: 13, color: "#d1d5db" }}>/</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#374151" }}>{totalQty.toLocaleString()}</span>
+            <span style={{ fontSize: 12, color: "#9ca3af" }}>{qtyLabel}</span>
+          </>
+        )}
       </div>
-      <div style={{ fontSize: 13, color: "#777", marginBottom: 4 }}>Open: {open}</div>
-      <div style={{ fontSize: 13, color: "#777" }}>Closed: {closed}</div>
+
+      <div style={{ borderTop: "1px solid #f3f4f6", margin: "10px 0 8px" }} />
+
+      {/* Open row */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 4, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, color: "#6b7280", minWidth: 46 }}>Open</span>
+        <strong style={{ fontSize: 13, color: "#111827" }}>{open.toLocaleString()}</strong>
+        <span style={{ fontSize: 11, color: "#9ca3af" }}>{countUnit}</span>
+        {openQty !== undefined && (
+          <>
+            <span style={{ fontSize: 11, color: "#d1d5db" }}>/</span>
+            <strong style={{ fontSize: 13, color: "#111827" }}>{openQty.toLocaleString()}</strong>
+            <span style={{ fontSize: 11, color: "#9ca3af" }}>{qtyLabel}</span>
+          </>
+        )}
+      </div>
+
+      {/* Closed row */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 4, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, color: "#6b7280", minWidth: 46 }}>Closed</span>
+        <strong style={{ fontSize: 13, color: "#111827" }}>{closed.toLocaleString()}</strong>
+        <span style={{ fontSize: 11, color: "#9ca3af" }}>{countUnit}</span>
+        {closedQty !== undefined && (
+          <>
+            <span style={{ fontSize: 11, color: "#d1d5db" }}>/</span>
+            <strong style={{ fontSize: 13, color: "#111827" }}>{closedQty.toLocaleString()}</strong>
+            <span style={{ fontSize: 11, color: "#9ca3af" }}>{qtyLabel}</span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -483,8 +550,10 @@ function DNSectionTable({
               <th style={th}>Ship To</th>
               <th style={th}>Qty</th>
               <th style={th}>Status</th>
+              <th style={th}>Planned GI</th>
+              <th style={th}>Planned Ship</th>
+              <th style={th}>Shipped At</th>
               <th style={th}>Created At</th>
-              <th style={th}>Confirmed</th>
               <th style={th}>Action</th>
             </tr>
           </thead>
@@ -500,8 +569,10 @@ function DNSectionTable({
                 <td style={td}>{r.ship_to ?? "-"}</td>
                 <td style={td}>{Number(r.qty ?? 0)}</td>
                 <td style={td}>{r.status ?? "-"}</td>
+                <td style={td}>{r.planned_gi_date ? formatDateOnly(r.planned_gi_date) : "-"}</td>
+                <td style={td}>{r.planned_delivery_date ? formatDateOnly(r.planned_delivery_date) : "-"}</td>
+                <td style={td}>{formatDate(r.shipped_at)}</td>
                 <td style={td}>{formatDate(r.created_at)}</td>
-                <td style={td}>{formatDate(r.confirmed_at)}</td>
                 <td style={td}>
                   <a href={`/outbound/dn/${r.id}`}>
                     {getActionLabelByOpenClosed(isDNOpen(r.status))}
@@ -516,22 +587,121 @@ function DNSectionTable({
   );
 }
 
-function parseStatus(status?: string | null) {
-  return String(status ?? "").trim().toUpperCase();
+function ShipmentSectionTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: ShipmentRow[];
+}) {
+  // Flatten: one row per DN. Shipments with no DNs get one row with empty DN columns.
+  const flatRows: Array<{ ship: ShipmentRow; dn: ShipmentDnItem | null; isFirstDn: boolean; dnIndex: number; dnTotal: number }> = [];
+  for (const ship of rows) {
+    if (ship.dn_list.length === 0) {
+      flatRows.push({ ship, dn: null, isFirstDn: true, dnIndex: 0, dnTotal: 0 });
+    } else {
+      ship.dn_list.forEach((dn, i) => {
+        flatRows.push({ ship, dn, isFirstDn: i === 0, dnIndex: i, dnTotal: ship.dn_list.length });
+      });
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <h3 style={{ marginBottom: 12 }}>{title}</h3>
+
+      {rows.length === 0 ? (
+        <div style={{ color: "#666" }}>No Shipment data</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={th}>Shipment No</th>
+              <th style={th}>Status</th>
+              <th style={th}>BL No</th>
+              <th style={th}>ETA</th>
+              <th style={th}>ETD</th>
+              <th style={th}>Vessel</th>
+              <th style={th}>Container</th>
+              <th style={th}>DN No</th>
+              <th style={th}>DN Status</th>
+              <th style={th}>Ship From</th>
+              <th style={th}>Ship To</th>
+              <th style={th}>Planned GI</th>
+              <th style={th}>Planned Ship</th>
+              <th style={th}>Shipped At</th>
+              <th style={th}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {flatRows.map(({ ship, dn, isFirstDn, dnIndex, dnTotal }, idx) => {
+              const rowSpan = dnTotal > 0 ? dnTotal : 1;
+              const isNewShipment = isFirstDn;
+              const rowBg = idx % 2 === 0 ? "#fff" : "#fafafa";
+              return (
+                <tr key={`${ship.id}-${dn?.id ?? "none"}`} style={{ background: rowBg, borderTop: isNewShipment ? "2px solid #e5e7eb" : "1px solid #f0f0f0" }}>
+                  {/* Shipment columns — only on first DN row, use rowspan */}
+                  {isFirstDn && (
+                    <>
+                      <td style={{ ...td, fontWeight: 600, verticalAlign: "top" }} rowSpan={rowSpan}>
+                        <a href={`/outbound/shipment/${ship.id}`} style={link}>
+                          {ship.shipment_no ?? "-"}
+                        </a>
+                        {dnTotal > 1 && (
+                          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{dnTotal} DNs</div>
+                        )}
+                      </td>
+                      <td style={{ ...td, verticalAlign: "top" }} rowSpan={rowSpan}>{ship.status ?? "-"}</td>
+                      <td style={{ ...td, fontWeight: 500, color: ship.bl_no ? "#111" : "#9ca3af", verticalAlign: "top" }} rowSpan={rowSpan}>
+                        {ship.bl_no ?? "-"}
+                      </td>
+                      <td style={{ ...td, verticalAlign: "top" }} rowSpan={rowSpan}>{ship.eta ? formatDateOnly(ship.eta) : "-"}</td>
+                      <td style={{ ...td, verticalAlign: "top" }} rowSpan={rowSpan}>{ship.etd ? formatDateOnly(ship.etd) : "-"}</td>
+                      <td style={{ ...td, verticalAlign: "top" }} rowSpan={rowSpan}>{ship.vessel_name ?? "-"}</td>
+                      <td style={{ ...td, verticalAlign: "top" }} rowSpan={rowSpan}>{ship.container_no ?? "-"}</td>
+                    </>
+                  )}
+                  {/* DN columns */}
+                  <td style={td}>
+                    {dn ? (
+                      <a href={`/outbound/dn/${dn.id}`} style={link}>{dn.dn_no ?? "-"}</a>
+                    ) : "-"}
+                  </td>
+                  <td style={td}>{dn?.status ?? "-"}</td>
+                  <td style={td}>{dn?.ship_from ?? "-"}</td>
+                  <td style={td}>{dn?.ship_to ?? "-"}</td>
+                  <td style={td}>{dn?.planned_gi_date ? formatDateOnly(dn.planned_gi_date) : "-"}</td>
+                  <td style={td}>{dn?.planned_delivery_date ? formatDateOnly(dn.planned_delivery_date) : "-"}</td>
+                  <td style={td}>{dn?.shipped_at ? formatDate(dn.shipped_at) : "-"}</td>
+                  {/* Action — only on first row */}
+                  {isFirstDn && (
+                    <td style={{ ...td, verticalAlign: "top" }} rowSpan={rowSpan}>
+                      <a href={`/outbound/shipment/${ship.id}`} style={link}>
+                        {getActionLabelByOpenClosed(!ship.is_closed)}
+                      </a>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
 }
 
-function isPLOpen(status?: string | null) {
-  const s = parseStatus(status);
-  return s === "DRAFT" || s === "SUBMITTED" || s === "FINALIZED";
+function parseStatus(status?: string | null) {
+  return String(status ?? "").trim().toUpperCase();
 }
 
 function isPLClosed(status?: string | null) {
   return parseStatus(status) === "INBOUND_COMPLETED";
 }
 
-function isASNOpen(status?: string | null) {
-  const s = parseStatus(status);
-  return s === "CREATED" || s === "PARTIAL_RECEIVED" || s === "OPEN";
+// open = anything that is NOT closed  →  open + closed = total (always)
+function isPLOpen(status?: string | null) {
+  return !isPLClosed(status);
 }
 
 function isASNClosed(status?: string | null) {
@@ -539,12 +709,16 @@ function isASNClosed(status?: string | null) {
   return s === "FULL_RECEIVED" || s === "CONFIRMED";
 }
 
-function isGROpen(status?: string | null) {
-  return parseStatus(status) === "PENDING";
+function isASNOpen(status?: string | null) {
+  return !isASNClosed(status);
 }
 
 function isGRClosed(status?: string | null) {
   return parseStatus(status) === "CONFIRMED";
+}
+
+function isGROpen(status?: string | null) {
+  return !isGRClosed(status);
 }
 
 function isDNOpen(status?: string | null) {
@@ -562,10 +736,14 @@ function getActionLabelByOpenClosed(isOpen: boolean) {
 }
 
 function formatDate(value?: string | null) {
+  return fmtDate(value) || "-";
+}
+
+function formatDateOnly(value?: string | null) {
   if (!value) return "-";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString("ko-KR");
+  return d.toLocaleDateString("ko-KR");
 }
 
 function toCsv(rows: Record<string, unknown>[]) {
@@ -610,6 +788,7 @@ const EMPTY_SUMMARY: SummaryState = {
   asn: { total: 0, open: 0, closed: 0 },
   gr: { total: 0, open: 0, closed: 0 },
   dn: { total: 0, open: 0, closed: 0 },
+  shipment: { total: 0, open: 0, closed: 0 },
 };
 
 export default function MonitorClient() {
@@ -617,6 +796,7 @@ export default function MonitorClient() {
   const [asnRows, setAsnRows] = useState<ASNRow[]>([]);
   const [grRows, setGrRows] = useState<GRRow[]>([]);
   const [dnRows, setDnRows] = useState<DNRow[]>([]);
+  const [shipmentRows, setShipmentRows] = useState<ShipmentRow[]>([]);
   const [summary, setSummary] = useState<SummaryState>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -625,6 +805,7 @@ export default function MonitorClient() {
   const [asnFilter, setAsnFilter] = useState<FilterType>("OPEN");
   const [grFilter, setGrFilter] = useState<FilterType>("OPEN");
   const [dnFilter, setDnFilter] = useState<FilterType>("OPEN");
+  const [shipFilter, setShipFilter] = useState<FilterType>("ALL");
 
   async function parseJsonSafe(res: Response) {
     const text = await res.text();
@@ -640,18 +821,20 @@ export default function MonitorClient() {
       setLoading(true);
       setError("");
 
-      const [monitorRes, asnRes, grRes, dnRes] = await Promise.all([
+      const [monitorRes, asnRes, grRes, dnRes, shipRes] = await Promise.all([
         fetch("/api/monitor", { cache: "no-store" }),
         fetch("/api/asn/list", { cache: "no-store" }),
         fetch("/api/monitor/gr?status=ALL", { cache: "no-store" }),
-        fetch("/api/monitor/dn?status=ALL", { cache: "no-store" }),
+        fetch("/api/dn", { cache: "no-store" }),           // ← full DN data with ship_from/to
+        fetch("/api/monitor/shipment", { cache: "no-store" }),
       ]);
 
-      const [monitorJson, asnJson, grJson, dnJson] = await Promise.all([
+      const [monitorJson, asnJson, grJson, dnJson, shipJson] = await Promise.all([
         parseJsonSafe(monitorRes),
         parseJsonSafe(asnRes),
         parseJsonSafe(grRes),
         parseJsonSafe(dnRes),
+        parseJsonSafe(shipRes),
       ]);
 
       if (!monitorRes.ok || !(monitorJson as any)?.ok) {
@@ -669,7 +852,8 @@ export default function MonitorClient() {
 
       const monitorData = monitorJson as MonitorApiResponse;
 
-      setSummary({
+      setSummary((prev) => ({
+        ...prev,
         packing_list: {
           total: Number(monitorData.totals?.packing_list ?? 0),
           open: Number(monitorData.open_pl ?? 0),
@@ -690,7 +874,7 @@ export default function MonitorClient() {
           open: Number(monitorData.open_dn ?? 0) + Number(monitorData.reserved_dn ?? 0),
           closed: Number(monitorData.shipped_dn ?? 0),
         },
-      });
+      }));
 
       setPackingLists(monitorData.recent?.packing_lists ?? []);
 
@@ -793,19 +977,37 @@ export default function MonitorClient() {
 
       setGrRows(mappedGr);
 
-      const rawDn = pickArray(dnJson);
+      // DN: from /api/dn which returns { ok, dns: [...] }
+      const rawDn = (dnJson as any)?.dns ?? pickArray(dnJson);
       const mappedDn: DNRow[] = rawDn.map((r: any) => ({
         id: String(r.id),
         dn_no: r.dn_no ?? r.dnNo ?? null,
         status: r.status ?? null,
         created_at: r.created_at ?? r.createdAt ?? null,
         confirmed_at: r.confirmed_at ?? r.confirmedAt ?? null,
+        shipped_at: r.shipped_at ?? null,
         ship_from: r.ship_from ?? null,
         ship_to: r.ship_to ?? null,
-        qty: r.qty ?? 0,
+        qty: r.qty_total ?? r.qty ?? 0,
+        planned_gi_date: r.planned_gi_date ?? null,
+        planned_delivery_date: r.planned_delivery_date ?? null,
       }));
 
       setDnRows(mappedDn);
+
+      // Shipment summary update from shipJson
+      const shipSummary = (shipJson as any)?.summary ?? { total: 0, open: 0, closed: 0 };
+      setSummary((prev) => ({
+        ...prev,
+        shipment: {
+          total: shipSummary.total ?? 0,
+          open: shipSummary.open ?? 0,
+          closed: shipSummary.closed ?? 0,
+        },
+      }));
+
+      const rawShipments = (shipJson as any)?.items ?? [];
+      setShipmentRows(rawShipments);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load monitor");
       setPackingLists([]);
@@ -919,6 +1121,9 @@ export default function MonitorClient() {
   const dnOpenRows = useMemo(() => dnRows.filter((r) => isDNOpen(r.status)), [dnRows]);
   const dnClosedRows = useMemo(() => dnRows.filter((r) => isDNClosed(r.status)), [dnRows]);
 
+  const shipOpenRows = useMemo(() => shipmentRows.filter((r) => !r.is_closed), [shipmentRows]);
+  const shipClosedRows = useMemo(() => shipmentRows.filter((r) => r.is_closed), [shipmentRows]);
+
   const plDisplayRows = useMemo(() => {
     if (plFilter === "ALL") return packingLists;
     if (plFilter === "OPEN") return plOpenRows;
@@ -942,6 +1147,12 @@ export default function MonitorClient() {
     if (dnFilter === "OPEN") return dnOpenRows;
     return dnClosedRows;
   }, [dnFilter, dnRows, dnOpenRows, dnClosedRows]);
+
+  const shipDisplayRows = useMemo(() => {
+    if (shipFilter === "ALL") return shipmentRows;
+    if (shipFilter === "OPEN") return shipOpenRows;
+    return shipClosedRows;
+  }, [shipFilter, shipmentRows, shipOpenRows, shipClosedRows]);
 
   if (loading) {
     return <div style={{ padding: 20 }}>Loading monitor...</div>;
@@ -971,44 +1182,113 @@ export default function MonitorClient() {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={downloadAllCsv} style={button}>
-            Download CSV
-          </button>
           <button onClick={load} style={button}>
             Refresh
           </button>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
-        <SummaryCard
-          title="Packing List Summary"
-          total={summary.packing_list.total}
-          open={summary.packing_list.open}
-          closed={summary.packing_list.closed}
-        />
-        <SummaryCard
-          title="ASN Summary"
-          total={summary.asn.total}
-          open={summary.asn.open}
-          closed={summary.asn.closed}
-        />
-        <SummaryCard
-          title="GR Summary"
-          total={summary.gr.total}
-          open={summary.gr.open}
-          closed={summary.gr.closed}
-        />
-        <SummaryCard
-          title="DN Summary"
-          total={summary.dn.total}
-          open={summary.dn.open}
-          closed={summary.dn.closed}
-        />
-      </div>
+      {/* Summary Cards — counts & qty computed from loaded rows for consistency */}
+      {(() => {
+        // ── Packing List ──────────────────────────────────────────────────────
+        const plOpen_rows   = packingLists.filter(r => isPLOpen(r.status));
+        const plClosed_rows = packingLists.filter(r => isPLClosed(r.status));
+        const plTotal   = packingLists.length;
+        const plOpen    = plOpen_rows.length;
+        const plClosed  = plClosed_rows.length;
+        const plQtyAll    = packingLists.reduce((s, r) => s + Number(r.qty ?? 0), 0);
+        const plQtyOpen   = plOpen_rows.reduce((s, r) => s + Number(r.qty ?? 0), 0);
+        const plQtyClosed = plClosed_rows.reduce((s, r) => s + Number(r.qty ?? 0), 0);
 
+        // ── ASN ───────────────────────────────────────────────────────────────
+        const asnOpen_rows   = asnRows.filter(r => isASNOpen(r.computed_status ?? r.header_status));
+        const asnClosed_rows = asnRows.filter(r => isASNClosed(r.computed_status ?? r.header_status));
+        const asnTotal   = asnRows.length;
+        const asnOpen    = asnOpen_rows.length;
+        const asnClosed  = asnClosed_rows.length;
+        const asnQtyAll    = asnRows.reduce((s, r) => s + Number(r.asn_qty ?? 0), 0);
+        const asnQtyOpen   = asnOpen_rows.reduce((s, r) => s + Number(r.asn_qty ?? 0), 0);
+        const asnQtyClosed = asnClosed_rows.reduce((s, r) => s + Number(r.asn_qty ?? 0), 0);
+
+        // ── GR ────────────────────────────────────────────────────────────────
+        const grOpen_rows   = grRows.filter(r => isGROpen(r.status));
+        const grClosed_rows = grRows.filter(r => isGRClosed(r.status));
+        const grTotal   = grRows.length;
+        const grOpen    = grOpen_rows.length;
+        const grClosed  = grClosed_rows.length;
+        const grQtyAll    = grRows.reduce((s, r) => s + Number(r.received_total ?? 0), 0);
+        const grQtyOpen   = grOpen_rows.reduce((s, r) => s + Number(r.received_total ?? 0), 0);
+        const grQtyClosed = grClosed_rows.reduce((s, r) => s + Number(r.received_total ?? 0), 0);
+
+        // ── DN ────────────────────────────────────────────────────────────────
+        const dnOpen_rows   = dnRows.filter(r => isDNOpen(r.status));
+        const dnClosed_rows = dnRows.filter(r => isDNClosed(r.status));
+        const dnTotal   = dnRows.length;
+        const dnOpen    = dnOpen_rows.length;
+        const dnClosed  = dnClosed_rows.length;
+        const dnQtyAll    = dnRows.reduce((s, r) => s + Number(r.qty ?? 0), 0);
+        const dnQtyOpen   = dnOpen_rows.reduce((s, r) => s + Number(r.qty ?? 0), 0);
+        const dnQtyClosed = dnClosed_rows.reduce((s, r) => s + Number(r.qty ?? 0), 0);
+
+        // ── Shipment ──────────────────────────────────────────────────────────
+        const shipOpen_rows   = shipmentRows.filter(r => !r.is_closed);
+        const shipClosed_rows = shipmentRows.filter(r => r.is_closed);
+        const shipTotal   = shipmentRows.length;
+        const shipOpen    = shipOpen_rows.length;
+        const shipClosed  = shipClosed_rows.length;
+        const shipDnsAll    = shipmentRows.reduce((s, r) => s + (r.dn_count ?? 0), 0);
+        const shipDnsOpen   = shipOpen_rows.reduce((s, r) => s + (r.dn_count ?? 0), 0);
+        const shipDnsClosed = shipClosed_rows.reduce((s, r) => s + (r.dn_count ?? 0), 0);
+
+        return (
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
+            <SummaryCard
+              title="Packing List"
+              total={plTotal}   totalQty={plQtyAll}
+              countUnit="PLs"   qtyLabel="qty"
+              open={plOpen}     openQty={plQtyOpen}
+              closed={plClosed} closedQty={plQtyClosed}
+            />
+            <SummaryCard
+              title="ASN"
+              total={asnTotal}   totalQty={asnQtyAll}
+              countUnit="ASNs"   qtyLabel="qty"
+              open={asnOpen}     openQty={asnQtyOpen}
+              closed={asnClosed} closedQty={asnQtyClosed}
+            />
+            <SummaryCard
+              title="GR"
+              total={grTotal}   totalQty={grQtyAll}
+              countUnit="GRs"   qtyLabel="received"
+              open={grOpen}     openQty={grQtyOpen}
+              closed={grClosed} closedQty={grQtyClosed}
+            />
+            <SummaryCard
+              title="DN"
+              total={dnTotal}   totalQty={dnQtyAll}
+              countUnit="DNs"   qtyLabel="qty"
+              open={dnOpen}     openQty={dnQtyOpen}
+              closed={dnClosed} closedQty={dnQtyClosed}
+            />
+            <SummaryCard
+              title="Shipment"
+              total={shipTotal}   totalQty={shipDnsAll}
+              countUnit="Shipments" qtyLabel="DNs"
+              open={shipOpen}     openQty={shipDnsOpen}
+              closed={shipClosed} closedQty={shipDnsClosed}
+            />
+          </div>
+        );
+      })()}
+
+      {/* Packing List */}
       <div style={{ marginTop: 24 }}>
-        <h3 style={{ marginBottom: 8 }}>Packing List</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>Packing List</h3>
+          <a href="/api/monitor/export/pl" download style={dlBtn}>
+            ⬇ Detail CSV (SKU)
+          </a>
+        </div>
         <FilterButtons value={plFilter} onChange={setPlFilter} />
         <PackingListSectionTable
           title={`Packing List (${plFilter})`}
@@ -1017,8 +1297,14 @@ export default function MonitorClient() {
         />
       </div>
 
+      {/* ASN */}
       <div style={{ marginTop: 36 }}>
-        <h3 style={{ marginBottom: 8 }}>ASN</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>ASN</h3>
+          <a href="/api/wms/monitor/asn/export/detail?view=all" download style={dlBtn}>
+            ⬇ Detail CSV (SKU)
+          </a>
+        </div>
         <FilterButtons value={asnFilter} onChange={setAsnFilter} />
         <ASNSectionTable
           title={`ASN List (${asnFilter})`}
@@ -1027,8 +1313,14 @@ export default function MonitorClient() {
         />
       </div>
 
+      {/* GR */}
       <div style={{ marginTop: 36 }}>
-        <h3 style={{ marginBottom: 8 }}>GR</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>GR</h3>
+          <a href="/api/monitor/export/gr" download style={dlBtn}>
+            ⬇ Detail CSV (SKU)
+          </a>
+        </div>
         <FilterButtons value={grFilter} onChange={setGrFilter} />
         <GRSectionTable
           title={`GR List (${grFilter})`}
@@ -1037,12 +1329,33 @@ export default function MonitorClient() {
         />
       </div>
 
+      {/* DN */}
       <div style={{ marginTop: 36 }}>
-        <h3 style={{ marginBottom: 8 }}>DN</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>DN</h3>
+          <a href="/api/dn/export" download style={dlBtn}>
+            ⬇ Detail CSV (SKU)
+          </a>
+        </div>
         <FilterButtons value={dnFilter} onChange={setDnFilter} />
         <DNSectionTable
           title={`DN List (${dnFilter})`}
           rows={dnDisplayRows}
+        />
+      </div>
+
+      {/* Shipment */}
+      <div style={{ marginTop: 36 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>Shipment</h3>
+          <a href="/api/monitor/export/shipment" download style={dlBtn}>
+            ⬇ Detail CSV (DN)
+          </a>
+        </div>
+        <FilterButtons value={shipFilter} onChange={setShipFilter} />
+        <ShipmentSectionTable
+          title={`Shipment List (${shipFilter})`}
+          rows={shipDisplayRows}
         />
       </div>
     </div>
@@ -1054,6 +1367,21 @@ const button: React.CSSProperties = {
   border: "1px solid #ccc",
   borderRadius: 6,
   background: "#fff",
+  cursor: "pointer",
+};
+
+const dlBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  padding: "4px 12px",
+  border: "1px solid #d1d5db",
+  borderRadius: 6,
+  background: "#fff",
+  color: "#374151",
+  fontSize: 12,
+  fontWeight: 500,
+  textDecoration: "none",
   cursor: "pointer",
 };
 

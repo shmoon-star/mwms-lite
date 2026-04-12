@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type TraceRow = {
   packing_list_id: string;
@@ -109,7 +110,7 @@ export default function TraceClient() {
                     </div>
                   )}
                 </td>
-                <td style={td}>{row.created_at ?? "-"}</td>
+                <td style={td}>{fmtDate(row.created_at) || "-"}</td>
               </tr>
             ))
           )}

@@ -43,6 +43,7 @@ type PackingListHeaderRow = {
   id: string;
   pl_no: string | null;
   po_no: string | null;
+  eta: string | null;
 };
 
 type PackingListLineRow = {
@@ -259,7 +260,7 @@ export async function GET(req: Request) {
     if (packingListIds.length > 0) {
       const { data: plRowsRaw, error: plErr } = await sb
         .from("packing_list_header")
-        .select("id, pl_no, po_no")
+        .select("id, pl_no, po_no, eta")
         .in("id", packingListIds);
 
       if (plErr) throw plErr;
@@ -453,6 +454,7 @@ export async function GET(req: Request) {
           String(header.source_type || "").toUpperCase() === "PACKING_LIST"
             ? packingHeader?.pl_no ?? null
             : null,
+        eta: packingHeader?.eta ?? null,
         header_status: normalizeHeaderStatus(header.status),
         computed_status: computedStatus,
         total_cartons: cartonSet.size,

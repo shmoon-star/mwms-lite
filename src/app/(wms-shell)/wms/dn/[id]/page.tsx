@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fmtDate as fmtDateYmd } from "@/lib/fmt";
+import { barcodeSvg } from "@/lib/barcode";
 
 type Header = {
   id: string;
@@ -88,6 +90,10 @@ export default function WmsDnDetailPage({
   const [selectedBoxId, setSelectedBoxId] = useState("");
   const [sku, setSku] = useState("");
   const [qty, setQty] = useState<number>(1);
+  const [barcodeInput, setBarcodeInput] = useState("");
+  const [scannedLine, setScannedLine] = useState<Line | null>(null);
+  const [scanError, setScanError] = useState("");
+  const barcodeRef = useRef<HTMLInputElement>(null);
 
   const [savingBox, setSavingBox] = useState(false);
   const [savingItem, setSavingItem] = useState(false);
@@ -192,11 +198,30 @@ export default function WmsDnDetailPage({
 
       if (json.box?.id) {
         setSelectedBoxId(json.box.id);
+        // Auto-focus barcode input after box is created
+        setTimeout(() => barcodeRef.current?.focus(), 100);
       }
     } catch (e: any) {
       alert(e?.message || "Failed to create box");
     } finally {
       setSavingBox(false);
+    }
+  }
+
+  function handleBarcodeSearch() {
+    const q = barcodeInput.trim().toUpperCase();
+    if (!q) return;
+    const found = lines.find(
+      (l) => l.sku.toUpperCase() === q || l.sku.toUpperCase().includes(q)
+    );
+    if (found) {
+      setScannedLine(found);
+      setSku(found.sku);
+      setScanError("");
+    } else {
+      setScannedLine(null);
+      setSku("");
+      setScanError(`"${barcodeInput}" — 해당 SKU를 찾을 수 없습니다.`);
     }
   }
 
@@ -232,7 +257,12 @@ export default function WmsDnDetailPage({
 
       setSku("");
       setQty(1);
+      setBarcodeInput("");
+      setScannedLine(null);
+      setScanError("");
       await load(id);
+      // Re-focus barcode for next scan
+      setTimeout(() => barcodeRef.current?.focus(), 100);
     } catch (e: any) {
       alert(e?.message || "Failed to add item");
     } finally {
@@ -295,6 +325,120 @@ export default function WmsDnDetailPage({
     }
   }
 
+  async function handlePrintLabel() {
+    if (!selectedBox || !header) return;
+
+    // Fetch barcode info for SKUs in this box
+    const skus = Array.from(new Set(selectedBox.items.map((i) => i.sku).filter(Boolean)));
+    let barcodeMap: Record<string, string> = {};
+    let descMap: Record<string, string> = {};
+
+    if (skus.length > 0) {
+      try {
+        const res = await fetch("/api/products");
+        const json = await res.json();
+        if (json.ok && json.data) {
+          for (const p of json.data) {
+            if (skus.includes(p.sku)) {
+              barcodeMap[p.sku] = p.barcode || "";
+              descMap[p.sku] = p.name || p.product_name || "";
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Also get description from DN lines
+    for (const line of lines) {
+      if (!descMap[line.sku] && line.product_name) {
+        descMap[line.sku] = line.product_name;
+      }
+    }
+
+    const totalItems = selectedBox.items.length;
+    const totalQty = sumBoxQty(selectedBox.items);
+    const boxBarcode = barcodeSvg(selectedBox.box_no, 48, 1.5);
+
+    // Aggregate items by SKU
+    const skuQtyMap = new Map<string, number>();
+    for (const item of selectedBox.items) {
+      skuQtyMap.set(item.sku, (skuQtyMap.get(item.sku) || 0) + Number(item.qty || 0));
+    }
+
+    let itemRows = "";
+    for (const [itemSku, itemQty] of skuQtyMap) {
+      const bc = barcodeMap[itemSku];
+      const desc = descMap[itemSku] || "";
+      const skuBarcodeSvg = bc ? barcodeSvg(bc, 28, 1) : "";
+      itemRows += `
+        <tr>
+          <td style="padding:4px 6px;font-family:monospace;font-size:11px;font-weight:600">${itemSku}</td>
+          <td style="padding:4px 6px">${skuBarcodeSvg ? skuBarcodeSvg + '<div style="font-size:9px;text-align:center;margin-top:1px">' + (bc || "") + '</div>' : '-'}</td>
+          <td style="padding:4px 6px;font-size:11px">${desc}</td>
+          <td style="padding:4px 6px;font-size:12px;font-weight:700;text-align:right">${itemQty}</td>
+        </tr>`;
+    }
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<title>Box Label - ${selectedBox.box_no}</title>
+<style>
+  @page { size: 200mm 100mm; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 200mm; height: 100mm; font-family: Arial, sans-serif; padding: 6mm; display: flex; flex-direction: column; }
+  .header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1.5px solid #000; padding-bottom: 5px; margin-bottom: 4px; }
+  .box-label { font-size: 18px; font-weight: 800; }
+  .barcode-area { text-align: center; }
+  .barcode-text { font-size: 10px; font-family: monospace; margin-top: 1px; }
+  .meta { font-size: 11px; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 4px; display: flex; gap: 16px; }
+  .meta span { color: #333; }
+  .meta b { color: #000; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { background: #f3f4f6; text-align: left; padding: 3px 6px; font-size: 10px; font-weight: 700; border-bottom: 1.5px solid #000; }
+  td { border-bottom: 0.5px solid #ddd; }
+  .footer { margin-top: auto; border-top: 1.5px solid #000; padding-top: 3px; font-size: 11px; font-weight: 700; display: flex; justify-content: space-between; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="box-label">Box: ${selectedBox.box_no}</div>
+      <div style="font-size:11px;color:#666">DN: ${header.dn_no}</div>
+    </div>
+    <div class="barcode-area">
+      ${boxBarcode}
+      <div class="barcode-text">${selectedBox.box_no}</div>
+    </div>
+  </div>
+
+  <div class="meta">
+    <span>Weight: <b>${selectedBox.box_weight_kg != null ? selectedBox.box_weight_kg + " kg" : "-"}</b></span>
+    <span>Type: <b>${selectedBox.box_type || "-"}</b></span>
+    <span>Packed: <b>${fmtDateYmd(selectedBox.packed_at) || "-"}</b></span>
+  </div>
+
+  <table>
+    <thead><tr><th>SKU</th><th>Barcode</th><th>Description</th><th style="text-align:right">Qty</th></tr></thead>
+    <tbody>${itemRows}</tbody>
+  </table>
+
+  <div class="footer">
+    <span>Items: ${totalItems}</span>
+    <span>Total Qty: ${totalQty}</span>
+  </div>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank", "width=800,height=500");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+      setTimeout(() => w.print(), 400);
+    }
+  }
+
   if (loading) {
     return <div className="p-6">Loading...</div>;
   }
@@ -322,8 +466,8 @@ export default function WmsDnDetailPage({
           <div className="mt-2 space-y-1 text-sm text-gray-600">
             <div>Customer: {header.customer_label || "-"}</div>
             <div>Status: {header.status || "-"}</div>
-            <div>Created: {fmtDate(header.created_at)}</div>
-            <div>Shipped At: {fmtDate(header.shipped_at)}</div>
+            <div>Created: {fmtDateYmd(header.created_at) || "-"}</div>
+            <div>Shipped At: {fmtDateYmd(header.shipped_at) || "-"}</div>
           </div>
         </div>
 
@@ -440,45 +584,138 @@ export default function WmsDnDetailPage({
             <div>
               <h2 className="text-lg font-semibold">Add Item to Box</h2>
               <p className="text-sm text-gray-500">
-                선택한 OPEN 박스에 SKU / Qty를 적재합니다.
+                선택한 OPEN 박스에 바코드 스캔 후 Qty를 입력합니다.
               </p>
             </div>
 
-            <select
-              value={selectedBoxId}
-              onChange={(e) => setSelectedBoxId(e.target.value)}
-              className="w-full rounded border px-3 py-2 text-sm"
-            >
-              <option value="">Select Box</option>
-              {boxes.map((box) => (
-                <option key={box.id} value={box.id}>
-                  {box.box_no} / {box.status}
-                </option>
-              ))}
-            </select>
+            {/* Selected Box — read-only display, changed by clicking Box Summary */}
+            <div className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${
+              selectedBox
+                ? (selectedBox.status || "").toUpperCase() === "OPEN"
+                  ? "border-green-300 bg-green-50"
+                  : "border-gray-200 bg-gray-50"
+                : "border-dashed border-gray-300 bg-gray-50"
+            }`}>
+              {selectedBox ? (
+                <>
+                  <div>
+                    <span className="font-semibold">{selectedBox.box_no}</span>
+                    <span className={`ml-2 text-xs px-1.5 py-0.5 rounded border font-medium ${
+                      (selectedBox.status || "").toUpperCase() === "OPEN"
+                        ? "bg-green-100 text-green-700 border-green-200"
+                        : "bg-gray-100 text-gray-500 border-gray-200"
+                    }`}>
+                      {selectedBox.status}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {boxItemCount(selectedBox.items)} items / {sumBoxQty(selectedBox.items)} qty
+                  </span>
+                </>
+              ) : (
+                <span className="text-gray-400">오른쪽 박스 목록에서 박스를 선택하세요</span>
+              )}
+            </div>
 
-            <select
-              value={sku}
-              onChange={(e) => setSku(e.target.value)}
-              className="w-full rounded border px-3 py-2 text-sm"
-            >
-              <option value="">Select SKU</option>
-              {lines.map((line) => (
-                <option key={line.id} value={line.sku}>
-                  {line.sku}
-                  {line.product_name ? ` / ${line.product_name}` : ""}
-                  {` / ordered ${line.qty_ordered} / packed ${line.qty_packed} / balance ${line.balance}`}
-                </option>
-              ))}
-            </select>
+            {/* Barcode scan input */}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-500">
+                SKU / Barcode 스캔
+              </label>
+              <div className="flex gap-2">
+                <input
+                  ref={barcodeRef}
+                  type="text"
+                  value={barcodeInput}
+                  onChange={(e) => {
+                    setBarcodeInput(e.target.value);
+                    setScanError("");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleBarcodeSearch();
+                    }
+                  }}
+                  placeholder="바코드 스캔 또는 SKU 입력 후 Enter"
+                  className="flex-1 rounded border px-3 py-2 text-sm font-mono"
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  onClick={handleBarcodeSearch}
+                  className="rounded border px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100"
+                >
+                  조회
+                </button>
+              </div>
 
-            <input
-              type="number"
-              min={1}
-              value={qty}
-              onChange={(e) => setQty(Number(e.target.value || 0))}
-              className="w-full rounded border px-3 py-2 text-sm"
-            />
+              {/* Scan error */}
+              {scanError && (
+                <div className="text-xs text-red-600 px-1">{scanError}</div>
+              )}
+            </div>
+
+            {/* Scanned SKU info card */}
+            {scannedLine ? (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-semibold text-sm font-mono">{scannedLine.sku}</div>
+                    {scannedLine.product_name && (
+                      <div className="text-xs text-gray-600 mt-0.5">{scannedLine.product_name}</div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setScannedLine(null); setSku(""); setBarcodeInput(""); setScanError(""); barcodeRef.current?.focus(); }}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded bg-white border px-2 py-1.5">
+                    <div className="text-xs text-gray-400">Ordered</div>
+                    <div className="font-semibold text-sm">{scannedLine.qty_ordered}</div>
+                  </div>
+                  <div className="rounded bg-white border px-2 py-1.5">
+                    <div className="text-xs text-gray-400">Packed</div>
+                    <div className="font-semibold text-sm">{scannedLine.qty_packed}</div>
+                  </div>
+                  <div className={`rounded border px-2 py-1.5 ${
+                    scannedLine.balance > 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"
+                  }`}>
+                    <div className="text-xs text-gray-400">Balance</div>
+                    <div className={`font-semibold text-sm ${
+                      scannedLine.balance > 0 ? "text-amber-700" : "text-green-700"
+                    }`}>{scannedLine.balance}</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-center text-xs text-gray-400">
+                바코드를 스캔하면 SKU 정보가 표시됩니다
+              </div>
+            )}
+
+            {/* Qty input */}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-500">Qty</label>
+              <input
+                type="number"
+                min={1}
+                value={qty}
+                onChange={(e) => setQty(Number(e.target.value || 0))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && scannedLine && selectedBox) {
+                    e.preventDefault();
+                    handleAddItem();
+                  }
+                }}
+                className="w-full rounded border px-3 py-2 text-sm"
+              />
+            </div>
 
             <button
               onClick={handleAddItem}
@@ -486,9 +723,10 @@ export default function WmsDnDetailPage({
                 savingItem ||
                 isShipped ||
                 !selectedBox ||
-                (selectedBox.status || "").toUpperCase() !== "OPEN"
+                (selectedBox.status || "").toUpperCase() !== "OPEN" ||
+                !scannedLine
               }
-              className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+              className="w-full rounded border px-3 py-2 text-sm bg-black text-white hover:bg-gray-800 disabled:opacity-40 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
             >
               {savingItem ? "Saving..." : "Add Item"}
             </button>
@@ -595,7 +833,7 @@ export default function WmsDnDetailPage({
                           <td className="px-3 py-2">{box.status || "-"}</td>
                           <td className="px-3 py-2">{boxItemCount(box.items)}</td>
                           <td className="px-3 py-2">{sumBoxQty(box.items)}</td>
-                          <td className="px-3 py-2">{fmtDate(box.packed_at)}</td>
+                          <td className="px-3 py-2">{fmtDateYmd(box.packed_at) || "-"}</td>
                         </tr>
                       );
                     })
@@ -621,7 +859,7 @@ export default function WmsDnDetailPage({
                   <div>
                     <div className="text-lg font-semibold">{selectedBox.box_no}</div>
                     <div className="text-sm text-gray-500">
-                      Status: {selectedBox.status || "-"} / Packed At: {fmtDate(selectedBox.packed_at)}
+                      Status: {selectedBox.status || "-"} / Packed At: {fmtDateYmd(selectedBox.packed_at) || "-"}
                     </div>
                     <div className="text-sm text-gray-500">
                       Type: {selectedBox.box_type || "-"} / Weight:{" "}
@@ -635,14 +873,22 @@ export default function WmsDnDetailPage({
                     </div>
                   </div>
 
-                  {(selectedBox.status || "").toUpperCase() === "OPEN" && !isShipped && (
+                  <div className="flex gap-2">
                     <button
-                      onClick={() => handleCloseBox(selectedBox.id)}
+                      onClick={handlePrintLabel}
                       className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
                     >
-                      Close Box
+                      🏷️ Print Label
                     </button>
-                  )}
+                    {(selectedBox.status || "").toUpperCase() === "OPEN" && !isShipped && (
+                      <button
+                        onClick={() => handleCloseBox(selectedBox.id)}
+                        className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
+                      >
+                        Close Box
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto rounded-lg border">
@@ -668,7 +914,7 @@ export default function WmsDnDetailPage({
                             <td className="px-3 py-2">{item.sku}</td>
                             <td className="px-3 py-2">{item.qty}</td>
                             <td className="px-3 py-2">{item.source_type || "-"}</td>
-                            <td className="px-3 py-2">{fmtDate(item.created_at)}</td>
+                            <td className="px-3 py-2">{fmtDateYmd(item.created_at) || "-"}</td>
                           </tr>
                         ))
                       )}

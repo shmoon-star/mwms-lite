@@ -20,6 +20,7 @@ type WmsAsnDetail = {
   po_no: string | null;
   vendor_code: string | null;
   vendor_name: string | null;
+  status: string | null;
   gr_id: string | null;
   gr_no: string | null;
   gr_status: string | null;
@@ -97,7 +98,10 @@ export default function WmsAsnDetailPage({
       const nextReasons: Record<string, VarianceReason> = {};
 
       for (const line of asn.lines || []) {
-        nextValues[line.asn_line_id] = safeNum(line.received_qty);
+        const savedReceived = safeNum(line.received_qty);
+        // Default to ASN qty so workers only need to fix discrepancies.
+        // If a received qty has already been saved (> 0), keep that value.
+        nextValues[line.asn_line_id] = savedReceived > 0 ? savedReceived : safeNum(line.asn_qty);
         if (line.variance_reason) {
           nextReasons[line.asn_line_id] = line.variance_reason as VarianceReason;
         }
@@ -241,7 +245,7 @@ export default function WmsAsnDetailPage({
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving || !detail}
+              disabled={saving || !detail || String(detail?.status ?? "").toUpperCase() === "CANCELLED"}
               className="px-3 py-2 rounded border bg-black text-white disabled:opacity-50 text-sm"
             >
               {saving ? "Saving..." : "Save Received Qty"}
@@ -264,6 +268,13 @@ export default function WmsAsnDetailPage({
         <div className="text-sm text-gray-500">No ASN found.</div>
       ) : (
         <>
+          {/* CANCELLED 경고 배너 */}
+          {String(detail.status ?? "").toUpperCase() === "CANCELLED" && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700 text-sm font-medium flex items-center gap-2">
+              ⛔ 이 ASN은 취소(CANCELLED) 상태입니다. GR 입력이 불가합니다.
+            </div>
+          )}
+
           {/* Header Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="border rounded p-4 bg-white">

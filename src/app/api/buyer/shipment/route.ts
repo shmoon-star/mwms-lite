@@ -117,6 +117,18 @@ export async function GET(req: NextRequest) {
       palletRows = palletData || [];
     }
 
+    // shipment_files counts (buyer가 접근 가능한 shipment만)
+    const fileCountMap = new Map<string, number>();
+    if (shipmentIds.length) {
+      const { data: fileRows } = await sb
+        .from("shipment_files")
+        .select("shipment_id")
+        .in("shipment_id", shipmentIds);
+      for (const row of fileRows ?? []) {
+        fileCountMap.set(row.shipment_id, (fileCountMap.get(row.shipment_id) ?? 0) + 1);
+      }
+    }
+
     const dnHeaderMap = new Map<string, any>();
     for (const row of dnHeaders) dnHeaderMap.set(row.id, row);
 
@@ -150,9 +162,13 @@ export async function GET(req: NextRequest) {
     const totalWeightMap = new Map<string, number>();
     const totalCbmMap = new Map<string, number>();
 
+    // Deduplicate by pallet id — same pallet linked to multiple DNs must count as 1
+    const seenPalletIds = new Set<string>();
     for (const row of palletRows) {
       const sid = row.shipment_id;
       if (String(row.status || "").toUpperCase() === "CANCELLED") continue;
+      if (seenPalletIds.has(row.id)) continue;
+      seenPalletIds.add(row.id);
 
       palletCountMap.set(sid, (palletCountMap.get(sid) || 0) + 1);
       totalBoxesMap.set(sid, (totalBoxesMap.get(sid) || 0) + safeNum(row.total_boxes));
@@ -184,6 +200,7 @@ export async function GET(req: NextRequest) {
       ship_from_summary: buildSummary(uniqNonEmpty(shipFromMap.get(row.id) || [])),
       ship_to_summary: buildSummary(uniqNonEmpty(shipToMap.get(row.id) || [])),
       dn_summary: buildSummary(uniqNonEmpty(dnSummaryMap.get(row.id) || [])),
+      doc_count: fileCountMap.get(row.id) ?? 0,
     }));
 
     return NextResponse.json({ ok: true, scope: profile.role, buyer_code: buyer?.buyer_code ?? null, rows });

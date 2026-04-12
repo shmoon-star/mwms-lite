@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type ShipmentHeader = {
   id: string;
@@ -36,11 +37,6 @@ type PalletRow = {
   created_at: string;
   closed_at: string | null;
 };
-
-function fmtDate(v?: string | null) {
-  if (!v) return "-";
-  return new Date(v).toLocaleString();
-}
 
 export default function OutboundShipmentDetailPage({
   params,
@@ -104,8 +100,8 @@ export default function OutboundShipmentDetailPage({
             <div>Container: {header.container_no || "-"}</div>
             <div>Seal No: {header.seal_no || "-"}</div>
             <div>Remark: {header.remark || "-"}</div>
-            <div>Created At: {fmtDate(header.created_at)}</div>
-            <div>Closed At: {fmtDate(header.closed_at)}</div>
+            <div>Created At: {fmtDate(header.created_at) || "-"}</div>
+            <div>Closed At: {fmtDate(header.closed_at) || "-"}</div>
           </div>
         </div>
 
@@ -120,7 +116,7 @@ export default function OutboundShipmentDetailPage({
                   <div className="font-medium">{row.dn_no}</div>
                   <div>Status: {row.status || "-"}</div>
                   <div>Ship To: {row.ship_to || "-"}</div>
-                  <div>Created: {fmtDate(row.created_at)}</div>
+                  <div>Created: {fmtDate(row.created_at) || "-"}</div>
                 </div>
               ))
             )}
@@ -156,7 +152,7 @@ export default function OutboundShipmentDetailPage({
                     <td className="px-3 py-2">{row.total_qty}</td>
                     <td className="px-3 py-2">{row.total_weight}</td>
                     <td className="px-3 py-2">{row.total_cbm}</td>
-                    <td className="px-3 py-2">{fmtDate(row.created_at)}</td>
+                    <td className="px-3 py-2">{fmtDate(row.created_at) || "-"}</td>
                   </tr>
                 ))}
               </tbody>

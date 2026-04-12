@@ -271,7 +271,11 @@ export async function GET(req: Request) {
       };
     });
 
-    items = items.filter((row) => safeNum(row.balance_qty) > 0);
+    items = items.filter(
+      (row) =>
+        safeNum(row.balance_qty) > 0 &&
+        String(row.status ?? "").toUpperCase() !== "CANCELLED"
+    );
 
     if (keyword) {
       items = items.filter((row) =>

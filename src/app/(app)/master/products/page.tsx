@@ -5,6 +5,7 @@ import PageToolbar from "@/components/PageToolbar";
 import CsvUploadButton from "@/components/CsvUploadButton";
 import { downloadCsv } from "@/lib/csv";
 import UploadTemplateCard from "@/components/upload/UploadTemplateCard";
+import { fmtDate } from "@/lib/fmt";
 
 type ProductRow = {
   id: string;
@@ -139,7 +140,7 @@ export default function ProductsPage() {
                 <td style={td}>{r.brand ?? "-"}</td>
                 <td style={td}>{r.name ?? "-"}</td>
                 <td style={td}>{r.barcode ?? "-"}</td>
-                <td style={td}>{r.created_at ?? "-"}</td>
+                <td style={td}>{fmtDate(r.created_at) || "-"}</td>
               </tr>
             ))}
           </tbody>

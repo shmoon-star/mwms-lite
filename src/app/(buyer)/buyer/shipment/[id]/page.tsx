@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { fmtDate as fmtDateYmd } from "@/lib/fmt";
 
 type ShipmentHeader = {
   id: string;
@@ -13,6 +14,7 @@ type ShipmentHeader = {
   etd: string | null;
   atd: string | null;
   ata: string | null;
+  buyer_gr_date: string | null;
   vessel_name: string | null;
   container_no: string | null;
   seal_no: string | null;
@@ -87,6 +89,8 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+type ShipmentFile = { id: string; file_name: string; file_size: number; mime_type: string | null; storage_path: string; uploaded_at: string | null };
+
 export default function BuyerShipmentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [header, setHeader] = useState<ShipmentHeader | null>(null);
@@ -94,9 +98,9 @@ export default function BuyerShipmentDetailPage() {
   const [pallets, setPallets] = useState<PalletRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [files, setFiles] = useState<ShipmentFile[]>([]);
 
   useEffect(() => {
-    // Reuse existing SCM shipment detail API (read-only GET)
     fetch(`/api/scm/shipment/${id}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((json) => {
@@ -107,7 +111,30 @@ export default function BuyerShipmentDetailPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+
+    fetch(`/api/buyer/shipment/${id}/files`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((json) => { if (json?.ok) setFiles(json.files ?? []); })
+      .catch(() => {});
   }, [id]);
+
+  async function downloadFile(storagePath: string, fileName: string) {
+    try {
+      const res = await fetch("/api/scm/shipment-files/signed-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storage_path: storagePath, file_name: fileName }),
+      });
+      const json = await res.json();
+      if (json?.url) {
+        const a = document.createElement("a");
+        a.href = json.url;
+        a.download = fileName;
+        a.target = "_blank";
+        a.click();
+      }
+    } catch {}
+  }
 
   if (loading) return <p style={{ color: "#6b7280" }}>Loading...</p>;
   if (error) return (
@@ -150,8 +177,9 @@ export default function BuyerShipmentDetailPage() {
           <InfoRow label="ETA" value={header.eta} />
           <InfoRow label="ATD (실제 출발)" value={header.atd} />
           <InfoRow label="ATA (실제 도착)" value={header.ata} />
+          <InfoRow label="Buyer GR Date" value={header.buyer_gr_date} />
           <InfoRow label="Remark" value={header.remark} />
-          <InfoRow label="Created" value={fmtDate(header.created_at)} />
+          <InfoRow label="Created" value={fmtDateYmd(header.created_at) || "-"} />
         </div>
       </div>
 
@@ -193,8 +221,8 @@ export default function BuyerShipmentDetailPage() {
                 <td style={{ padding: "10px 14px" }}>{dn.status}</td>
                 <td style={{ padding: "10px 14px" }}>{dn.ship_from || "-"}</td>
                 <td style={{ padding: "10px 14px" }}>{dn.ship_to || "-"}</td>
-                <td style={{ padding: "10px 14px" }}>{fmtDate(dn.created_at)}</td>
-                <td style={{ padding: "10px 14px" }}>{fmtDate(dn.confirmed_at)}</td>
+                <td style={{ padding: "10px 14px" }}>{fmtDateYmd(dn.created_at) || "-"}</td>
+                <td style={{ padding: "10px 14px" }}>{fmtDateYmd(dn.confirmed_at) || "-"}</td>
               </tr>
             ))}
           </tbody>
@@ -226,12 +254,51 @@ export default function BuyerShipmentDetailPage() {
                 <td style={{ padding: "10px 14px", textAlign: "right" }}>{p.total_weight}</td>
                 <td style={{ padding: "10px 14px", textAlign: "right" }}>{p.total_cbm.toFixed(2)}</td>
                 <td style={{ padding: "10px 14px" }}>{p.length}×{p.width}×{p.height}</td>
-                <td style={{ padding: "10px 14px" }}>{fmtDate(p.closed_at)}</td>
+                <td style={{ padding: "10px 14px" }}>{fmtDateYmd(p.closed_at) || "-"}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* ── Shipment Files ─────────────────────────────────────────────── */}
+      {files.length > 0 && (
+        <div style={{ marginTop: 32, border: "1px solid #e5e7eb", borderRadius: 12, background: "#fff", padding: "20px 24px" }}>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>
+            Shipment Documents
+            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 600, padding: "1px 8px", borderRadius: 999, background: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe" }}>
+              {files.length}
+            </span>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "#6b7280", fontSize: 11, textTransform: "uppercase" }}>
+                <th style={{ paddingBottom: 8, paddingRight: 16 }}>File Name</th>
+                <th style={{ paddingBottom: 8, paddingRight: 16 }}>Size</th>
+                <th style={{ paddingBottom: 8 }}>Uploaded</th>
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((f) => (
+                <tr key={f.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "10px 16px 10px 0", fontWeight: 500 }}>
+                    <button
+                      onClick={() => downloadFile(f.storage_path, f.file_name)}
+                      style={{ color: "#2563eb", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", fontSize: 13, textAlign: "left" }}
+                    >
+                      📄 {f.file_name}
+                    </button>
+                  </td>
+                  <td style={{ padding: "10px 16px 10px 0", color: "#6b7280" }}>
+                    {f.file_size ? `${(f.file_size / 1024).toFixed(1)} KB` : "-"}
+                  </td>
+                  <td style={{ padding: "10px 0", color: "#6b7280" }}>{fmtDateYmd(f.uploaded_at) || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

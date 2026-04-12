@@ -114,7 +114,7 @@ export async function GET(req: Request) {
     if (skuList.length > 0) {
       const { data: productData, error: productError } = await sb
         .from("products")
-        .select("sku, name, brand")
+        .select("sku, name, brand, barcode")
         .in("sku", skuList);
 
       if (productError) {
@@ -150,6 +150,7 @@ export async function GET(req: Request) {
         row.line_no ?? "",
         row.carton_no || "",
         row.sku || "",
+        product?.barcode || "",
         product?.brand || "",
         product?.name || "",
         expected,
@@ -166,6 +167,7 @@ export async function GET(req: Request) {
         "line_no",
         "carton_no",
         "sku",
+        "barcode",
         "brand",
         "description",
         "expected_qty",

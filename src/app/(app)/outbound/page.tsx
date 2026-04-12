@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type Row = {
   id: string;
@@ -17,11 +18,6 @@ type Row = {
   dn_count: number;
   pallet_count: number;
 };
-
-function fmtDate(v?: string | null) {
-  if (!v) return "-";
-  return new Date(v).toLocaleString();
-}
 
 export default function OutboundShipmentPage() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -84,7 +80,7 @@ export default function OutboundShipmentPage() {
                   <td className="px-4 py-3">{row.pallet_count}</td>
                   <td className="px-4 py-3">{row.bl_no || "-"}</td>
                   <td className="px-4 py-3">{row.eta || "-"}</td>
-                  <td className="px-4 py-3">{fmtDate(row.created_at)}</td>
+                  <td className="px-4 py-3">{fmtDate(row.created_at) || "-"}</td>
                   <td className="px-4 py-3">
                     <Link
                       href={`/outbound/shipment/${row.id}`}

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type GRRow = {
   id: string;
@@ -20,13 +21,6 @@ type ApiResponse = {
   items?: GRRow[];
   error?: string;
 };
-
-function fmtDate(value: string | null) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
-}
 
 function badgeStyle(status: string | null): React.CSSProperties {
   const s = (status || "").toUpperCase();
@@ -353,7 +347,7 @@ export default function GRListClient() {
                       </div>
                     </td>
 
-                    <td style={td}>{fmtDate(row.created_at)}</td>
+                    <td style={td}>{fmtDate(row.created_at) || "-"}</td>
 
                     <td style={td}>
                       <Link href={`/inbound/gr/${row.id}`}>

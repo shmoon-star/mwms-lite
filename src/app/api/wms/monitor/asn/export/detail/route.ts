@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -183,25 +184,7 @@ export async function GET(req: Request) {
       new Set(lineRows.map((r: any) => r.sku).filter(Boolean))
     );
 
-    let products: any[] = [];
-    if (skuList.length > 0) {
-      const { data, error } = await sb
-        .from("products")
-        .select("sku, name, brand")
-        .in("sku", skuList);
-
-      if (error) {
-        return NextResponse.json(
-          { ok: false, error: error.message },
-          { status: 500 }
-        );
-      }
-
-      products = data || [];
-    }
-
-    const productMap = new Map<string, any>();
-    for (const row of products) productMap.set(row.sku, row);
+    const productMaster = await loadProductsBySkus(skuList, sb);
 
     const asnNos = Array.from(
       new Set(headerRows.map((h: any) => h.asn_no).filter(Boolean))
@@ -274,8 +257,6 @@ export async function GET(req: Request) {
           ? vendorMap.get(poHeader.vendor_id)
           : null;
 
-      const product = productMap.get(row.sku);
-
       const expected = inferExpected(row);
       const received = inferReceived(row);
       const balance = Math.max(expected - received, 0);
@@ -315,8 +296,9 @@ export async function GET(req: Request) {
         carton_no: cartonNo,
         line_no: row.line_no ?? "",
         sku: row.sku || "",
-        brand: product?.brand || "",
-        description: product?.name || "",
+        barcode: productMaster.barcodeOf(row.sku) ?? "",
+        brand: productMaster.resolve(row.sku)?.brand || "",
+        description: productMaster.nameOf(row.sku) || "",
         expected_qty: expected,
         received_qty: received,
         balance,
@@ -339,6 +321,7 @@ export async function GET(req: Request) {
         "carton_no",
         "line_no",
         "sku",
+        "barcode",
         "brand",
         "description",
         "expected_qty",
@@ -354,6 +337,7 @@ export async function GET(req: Request) {
         r.carton_no,
         r.line_no,
         r.sku,
+        r.barcode,
         r.brand,
         r.description,
         r.expected_qty,

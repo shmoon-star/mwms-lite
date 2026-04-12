@@ -139,3 +139,23 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* 테이블 컨테이너 자동 가로 스크롤 */
+.overflow-hidden:has(table) {
+  overflow-x: auto;
+}
+
+/* 테이블 셀: 줄바꿈 허용 + 최소 폭 보장 + 축소시 글자 크기 자동 조절 */
+th, td {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* 테이블 전체 글자 크기 기본값 */
+table {
+  font-size: 13px;
+}
+
+table th {
+  font-size: 12px;
+}

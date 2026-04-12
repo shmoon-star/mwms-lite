@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -52,11 +53,16 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
     if (lErr) throw lErr;
 
+    const skuList = (lines ?? []).map((l: any) => l.sku).filter(Boolean);
+    const productMaster = await loadProductsBySkus(skuList, sb);
+
     const rows = (lines ?? []).map((l) => ({
       gr_no: header.gr_no ?? "",
       gr_id: l.gr_id,
       gr_line_id: l.id,
       sku: l.sku ?? "",
+      barcode: productMaster.barcodeOf(l.sku) ?? "",
+      description: productMaster.nameOf(l.sku) ?? "",
       qty_expected: Number((l as any).qty_expected ?? 0),
       qty_received: Number((l as any).qty_received ?? 0),
       asn_line_id: (l as any).asn_line_id ?? "",
@@ -71,6 +77,7 @@ export async function GET(_req: NextRequest, context: RouteContext) {
               gr_id: grId,
               gr_line_id: "",
               sku: "",
+              barcode: "",
               qty_expected: "",
               qty_received: "",
               asn_line_id: "",

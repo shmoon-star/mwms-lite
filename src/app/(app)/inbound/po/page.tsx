@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import POUploadPanel from "./POUploadPanel";
+import POCancelButton from "./POCancelButton";
+import { fmtDate } from "@/lib/fmt";
 
 export const dynamic = "force-dynamic";
 
@@ -229,7 +231,7 @@ qtyMap = (poLineRows || []).reduce((map, row: any) => {
                 <td style={td}>{row.eta ?? "-"}</td>
                 <td style={td}>{row.total_qty}</td>
                 <td style={td}>{row.status ?? "-"}</td>
-                <td style={td}>{formatDateTime(row.created_at)}</td>
+                <td style={td}>{fmtDate(row.created_at) || "-"}</td>
                 <td style={td}>
                   {row.asns.length === 0 ? (
                     <span style={emptyText}>-</span>
@@ -262,8 +264,13 @@ qtyMap = (poLineRows || []).reduce((map, row: any) => {
                     </div>
                   )}
                 </td>
-                <td style={td}>
+                <td style={{ ...td, whiteSpace: "nowrap" }}>
                   <Link href={`/inbound/po/${row.id}`}>Open</Link>
+                  <POCancelButton
+                    poId={row.id}
+                    poNo={row.po_no}
+                    status={row.status}
+                  />
                 </td>
               </tr>
             ))}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -38,12 +39,17 @@ export async function GET(req: Request) {
       );
     }
 
+    const skuList = (data ?? []).map((r: any) => r.sku).filter(Boolean);
+    const productMaster = await loadProductsBySkus(skuList, supabase);
+
     const rows: string[] = [];
-    rows.push(["sku", "tx_type", "qty_delta", "ref_type", "ref_id", "created_at"].join(","));
+    rows.push(["sku", "barcode", "description", "tx_type", "qty_delta", "ref_type", "ref_id", "created_at"].join(","));
 
     for (const r of data ?? []) {
       rows.push([
         esc(r.sku),
+        esc(productMaster.barcodeOf(r.sku) ?? ""),
+        esc(productMaster.nameOf(r.sku) ?? ""),
         esc(r.tx_type),
         esc(r.qty_delta),
         esc(r.ref_type),

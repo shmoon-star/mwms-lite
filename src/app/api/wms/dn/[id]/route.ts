@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export async function GET(_req: Request, { params }: Params) {
 
     const { data: boxes, error: boxError } = await sb
       .from("dn_box")
-      .select("id, dn_id, box_no, status, remarks, packed_at, created_at")
+      .select("id, dn_id, box_no, status, remarks, packed_at, created_at, box_type, box_weight_kg")
       .eq("dn_id", id)
       .order("created_at", { ascending: false });
 
@@ -74,19 +75,19 @@ export async function GET(_req: Request, { params }: Params) {
     const skuList = [...new Set((lines || []).map((row: any) => row.sku).filter(Boolean))];
 
     const inventoryMap = new Map<string, number>();
-    if (skuList.length > 0) {
-      const { data: invRows, error: invError } = await sb
-        .from("inventory")
-        .select("*")
-        .in("sku", skuList);
 
-      if (invError) {
-        return NextResponse.json({ ok: false, error: invError.message }, { status: 500 });
-      }
+    const [invResult, productMaster] = await Promise.all([
+      skuList.length > 0
+        ? sb.from("inventory").select("sku, qty_onhand").in("sku", skuList)
+        : Promise.resolve({ data: [], error: null }),
+      loadProductsBySkus(skuList, sb),
+    ]);
 
-      for (const row of invRows || []) {
-        inventoryMap.set(row.sku, Number(row.qty_onhand || 0));
-      }
+    if (invResult.error) {
+      return NextResponse.json({ ok: false, error: invResult.error.message }, { status: 500 });
+    }
+    for (const row of invResult.data || []) {
+      inventoryMap.set(row.sku, Number(row.qty_onhand || 0));
     }
 
     const packedMap = new Map<string, number>();
@@ -106,11 +107,12 @@ export async function GET(_req: Request, { params }: Params) {
         id: row.id,
         sku: row.sku,
         product_name:
-  row.description ||
-  row.product_name ||
-  row.sku_name ||
-  row.item_name ||
-  null,
+          productMaster.nameOf(row.sku) ||
+          row.description ||
+          row.product_name ||
+          row.sku_name ||
+          row.item_name ||
+          null,
         qty_ordered: qtyOrdered,
         qty_packed: qtyPacked,
         balance,
@@ -140,10 +142,14 @@ export async function GET(_req: Request, { params }: Params) {
       remarks: box.remarks || null,
       packed_at: box.packed_at || null,
       created_at: box.created_at || null,
+      box_type: box.box_type || null,
+      box_weight_kg: box.box_weight_kg ?? null,
       items: (boxMap.get(box.id) || []).map((item: any) => ({
         id: item.id,
         dn_box_id: item.dn_box_id,
         sku: item.sku,
+        barcode: productMaster.barcodeOf(item.sku),
+        product_name: productMaster.nameOf(item.sku),
         qty: Number(item.qty || 0),
         source_type: item.source_type || "MANUAL",
         created_at: item.created_at || null,

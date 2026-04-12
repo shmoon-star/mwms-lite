@@ -17,7 +17,7 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
 
     const { data: po, error: poErr } = await sb
       .from("po_header")
-      .select("id, po_no, vendor_id, buyer_id, status, eta, created_at, confirmed_at")
+      .select("id, po_no, vendor_id, buyer_id, status, eta, created_at")
       .eq("id", id)
       .maybeSingle();
 
@@ -51,12 +51,12 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
       buyerInfo = b ?? null;
     }
 
-    // PO lines
+    // PO lines (actual columns: id, po_id, sku, qty, qty_ordered, created_at)
     const { data: lines, error: linesErr } = await sb
       .from("po_line")
-      .select("id, line_no, sku, qty, unit_price, currency, status")
+      .select("id, sku, qty, qty_ordered, created_at")
       .eq("po_id", id)
-      .order("line_no", { ascending: true });
+      .order("created_at", { ascending: true });
 
     if (linesErr) throw linesErr;
 
@@ -75,16 +75,16 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
       }
     }
 
-    const enrichedLines = (lines ?? []).map((l: any) => ({
+    const enrichedLines = (lines ?? []).map((l: any, idx: number) => ({
       id: l.id,
-      line_no: l.line_no,
+      line_no: idx + 1,
       sku: l.sku,
       product_name: productMap.get(l.sku)?.name ?? "-",
       brand: productMap.get(l.sku)?.brand ?? "-",
-      qty: l.qty,
-      unit_price: l.unit_price,
-      currency: l.currency,
-      status: l.status,
+      qty: l.qty_ordered ?? l.qty ?? 0,
+      unit_price: null,
+      currency: null,
+      status: null,
     }));
 
     return NextResponse.json({
@@ -99,7 +99,7 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
         status: po.status,
         eta: po.eta,
         created_at: po.created_at,
-        confirmed_at: po.confirmed_at,
+        confirmed_at: null,
         lines: enrichedLines,
       },
     });

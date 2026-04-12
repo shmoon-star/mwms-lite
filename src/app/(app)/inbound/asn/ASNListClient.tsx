@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type ASNRow = {
   id: string;
@@ -82,7 +83,7 @@ export default function ASNListClient() {
                 <td style={td}>{row.asn_no ?? row.id}</td>
                 <td style={td}>{row.vendor_name ?? row.vendor_id ?? "-"}</td>
                 <td style={td}>{row.status ?? "-"}</td>
-                <td style={td}>{row.created_at ?? "-"}</td>
+                <td style={td}>{fmtDate(row.created_at) || "-"}</td>
                 <td style={td}>
                   <Link href={`/inbound/asn/${row.id}`}>Open</Link>
                 </td>

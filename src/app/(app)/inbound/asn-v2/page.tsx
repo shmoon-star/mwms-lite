@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type AsnSummaryItem = {
   id: string;
@@ -13,18 +14,21 @@ type AsnSummaryItem = {
   source_type: string | null;
   source_id: string | null;
   source_ref_no: string | null;
+  eta: string | null;
   header_status: string | null;
   computed_status: string | null;
   total_cartons: number;
   po_qty: number;
   asn_qty: number;
   received_qty: number;
+  scm_gr_qty: number;
   balance_qty: number;
   gr_id: string | null;
   gr_no: string | null;
   gr_status: string | null;
   gr_confirmed_at: string | null;
   created_at: string | null;
+  doc_count: number;
 };
 
 type AsnDetailLine = {
@@ -84,13 +88,6 @@ type AsnAllDetailRow = {
   asn_created_at: string | null;
   line_created_at: string | null;
 };
-
-function fmtDate(v: string | null | undefined) {
-  if (!v) return "-";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return v;
-  return d.toLocaleString();
-}
 
 function safeNum(v: unknown) {
   const n = Number(v ?? 0);
@@ -160,6 +157,7 @@ export default function InboundAsnV2Page() {
   const [allDetails, setAllDetails] = useState<AsnAllDetailRow[]>([]);
   const [allDetailsLoading, setAllDetailsLoading] = useState(false);
   const [allDetailsError, setAllDetailsError] = useState<string>("");
+  const detailRef = useRef<HTMLDivElement>(null);
 
   type VendorDoc = { id: string; file_name: string; file_size: number | null; uploaded_at: string | null; storage_path?: string };
   const [vendorDocs, setVendorDocs] = useState<VendorDoc[]>([]);
@@ -353,6 +351,7 @@ export default function InboundAsnV2Page() {
         acc.po_qty += safeNum(row.po_qty);
         acc.asn_qty += safeNum(row.asn_qty);
         acc.received_qty += safeNum(row.received_qty);
+        acc.scm_gr_qty += safeNum(row.scm_gr_qty);
         acc.balance_qty += safeNum(row.balance_qty);
         return acc;
       },
@@ -362,6 +361,7 @@ export default function InboundAsnV2Page() {
         po_qty: 0,
         asn_qty: 0,
         received_qty: 0,
+        scm_gr_qty: 0,
         balance_qty: 0,
       }
     );
@@ -409,47 +409,6 @@ export default function InboundAsnV2Page() {
     ]);
 
     downloadCsv("asn_v2_summary.csv", headers, rows);
-  }
-
-  function handleDownloadDetailCsv() {
-    if (!detail) return;
-
-    const headers = [
-      "ASN No",
-      "PO No",
-      "PO Qty",
-      "Vendor Code",
-      "Vendor Name",
-      "Source Type",
-      "Source Ref No",
-      "Line No",
-      "Carton No",
-      "SKU",
-      "ASN Qty",
-      "Received Qty",
-      "Balance Qty",
-      "Created At",
-    ];
-
-    const rows = detail.lines.map((line) => [
-      detail.asn_no,
-      detail.po_no,
-      detail.po_qty,
-      detail.vendor_code,
-      detail.vendor_name,
-      detail.source_type,
-      detail.source_ref_no,
-      line.line_no,
-      line.carton_no,
-      line.sku,
-      line.asn_qty,
-      line.received_qty,
-      line.balance_qty,
-      line.created_at,
-    ]);
-
-    const fileAsnNo = String(detail.asn_no || "asn-detail").replace(/[^\w.-]+/g, "_");
-    downloadCsv(`${fileAsnNo}_detail.csv`, headers, rows);
   }
 
   function handleDownloadAllDetailCsv() {
@@ -529,15 +488,6 @@ export default function InboundAsnV2Page() {
 
           <button
             type="button"
-            onClick={handleDownloadDetailCsv}
-            disabled={!detail}
-            className="px-3 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50"
-          >
-            Download Selected Detail CSV
-          </button>
-
-          <button
-            type="button"
             onClick={handleDownloadAllDetailCsv}
             className="px-3 py-2 rounded border bg-white hover:bg-gray-50"
           >
@@ -546,31 +496,24 @@ export default function InboundAsnV2Page() {
         </div>
       </div>
 
-      <div className="grid grid-cols-6 gap-3">
-        <div className="border rounded p-4 bg-white">
-          <div className="text-xs text-gray-500">ASN Count</div>
-          <div className="text-2xl font-semibold mt-1">{summaryTotals.count}</div>
-        </div>
-        <div className="border rounded p-4 bg-white">
-          <div className="text-xs text-gray-500">Total Cartons</div>
-          <div className="text-2xl font-semibold mt-1">{summaryTotals.total_cartons}</div>
-        </div>
-        <div className="border rounded p-4 bg-white">
-          <div className="text-xs text-gray-500">PO Qty</div>
-          <div className="text-2xl font-semibold mt-1">{summaryTotals.po_qty}</div>
-        </div>
-        <div className="border rounded p-4 bg-white">
-          <div className="text-xs text-gray-500">ASN Qty</div>
-          <div className="text-2xl font-semibold mt-1">{summaryTotals.asn_qty}</div>
-        </div>
-        <div className="border rounded p-4 bg-white">
-          <div className="text-xs text-gray-500">Received Qty</div>
-          <div className="text-2xl font-semibold mt-1">{summaryTotals.received_qty}</div>
-        </div>
-        <div className="border rounded p-4 bg-white">
-          <div className="text-xs text-gray-500">Balance Qty</div>
-          <div className="text-2xl font-semibold mt-1">{summaryTotals.balance_qty}</div>
-        </div>
+      <div className="grid grid-cols-7 gap-3">
+        {[
+          { label: "ASN Count",     value: summaryTotals.count,        formula: "# of ASN headers" },
+          { label: "Total Cartons", value: summaryTotals.total_cartons, formula: "Σ distinct carton_no" },
+          { label: "PO Qty",        value: summaryTotals.po_qty,        formula: "Σ po_line.qty_ordered" },
+          { label: "ASN Qty",       value: summaryTotals.asn_qty,       formula: "Σ asn_line.qty_expected" },
+          { label: "Received Qty",  value: summaryTotals.received_qty,  formula: "Σ gr_line.qty_received (WMS)" },
+          { label: "SCM GR Qty",    value: summaryTotals.scm_gr_qty,    formula: "Σ qty_received (GR CONFIRMED)" },
+          { label: "Balance Qty",   value: summaryTotals.balance_qty,   formula: "ASN Qty − Received Qty" },
+        ].map(({ label, value, formula }) => (
+          <div key={label} className="border rounded p-4 bg-white">
+            <div className="text-xs text-gray-500">{label}</div>
+            <div className={`text-2xl font-semibold mt-1 ${label === "Balance Qty" && value > 0 ? "text-amber-600" : ""}`}>
+              {value}
+            </div>
+            <div className="text-xs text-gray-400 mt-1 font-mono">{formula}</div>
+          </div>
+        ))}
       </div>
 
       <div className="border rounded bg-white p-4 space-y-3">
@@ -667,12 +610,15 @@ export default function InboundAsnV2Page() {
                   <th className="text-left px-4 py-3 border-b">PO No</th>
                   <th className="text-right px-4 py-3 border-b">PO Qty</th>
                   <th className="text-left px-4 py-3 border-b">Source</th>
+                  <th className="text-left px-4 py-3 border-b">ETA</th>
                   <th className="text-left px-4 py-3 border-b">Header Status</th>
                   <th className="text-left px-4 py-3 border-b">Computed Status</th>
                   <th className="text-right px-4 py-3 border-b">Cartons</th>
                   <th className="text-right px-4 py-3 border-b">ASN Qty</th>
                   <th className="text-right px-4 py-3 border-b">Received Qty</th>
+                  <th className="text-right px-4 py-3 border-b">SCM GR Qty</th>
                   <th className="text-right px-4 py-3 border-b">Balance Qty</th>
+                  <th className="text-left px-4 py-3 border-b">Files</th>
                   <th className="text-left px-4 py-3 border-b">GR No</th>
                   <th className="text-left px-4 py-3 border-b">GR Status</th>
                   <th className="text-left px-4 py-3 border-b">GR Confirmed At</th>
@@ -686,7 +632,10 @@ export default function InboundAsnV2Page() {
                   return (
                     <tr
                       key={row.id}
-                      onClick={() => setSelectedId(row.id)}
+                      onClick={() => {
+                        setSelectedId(row.id);
+                        setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+                      }}
                       className={`cursor-pointer hover:bg-gray-50 ${selected ? "bg-blue-50" : ""}`}
                     >
                       <td className="px-4 py-3 border-b font-medium">{row.asn_no || "-"}</td>
@@ -700,6 +649,7 @@ export default function InboundAsnV2Page() {
                         <div>{row.source_type || "-"}</div>
                         <div className="text-xs text-gray-500">{row.source_ref_no || "-"}</div>
                       </td>
+                      <td className="px-4 py-3 border-b">{row.eta || "-"}</td>
                       <td className="px-4 py-3 border-b">
                         <span
                           className={`inline-flex px-2 py-1 text-xs rounded border ${statusChipClass(
@@ -721,7 +671,17 @@ export default function InboundAsnV2Page() {
                       <td className="px-4 py-3 border-b text-right">{safeNum(row.total_cartons)}</td>
                       <td className="px-4 py-3 border-b text-right">{safeNum(row.asn_qty)}</td>
                       <td className="px-4 py-3 border-b text-right">{safeNum(row.received_qty)}</td>
+                      <td className="px-4 py-3 border-b text-right">{safeNum(row.scm_gr_qty)}</td>
                       <td className="px-4 py-3 border-b text-right">{safeNum(row.balance_qty)}</td>
+                      <td className="px-4 py-3 border-b">
+                        {row.doc_count > 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                            📂 {row.doc_count}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">-</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 border-b">{row.gr_no || "-"}</td>
                       <td className="px-4 py-3 border-b">
                         <span
@@ -732,8 +692,8 @@ export default function InboundAsnV2Page() {
                           {row.gr_status || "-"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 border-b">{fmtDate(row.gr_confirmed_at)}</td>
-                      <td className="px-4 py-3 border-b">{fmtDate(row.created_at)}</td>
+                      <td className="px-4 py-3 border-b">{fmtDate(row.gr_confirmed_at) || "-"}</td>
+                      <td className="px-4 py-3 border-b">{fmtDate(row.created_at) || "-"}</td>
                     </tr>
                   );
                 })}
@@ -743,7 +703,7 @@ export default function InboundAsnV2Page() {
         )}
       </div>
 
-      <div className="border rounded bg-white overflow-hidden">
+      <div ref={detailRef} className="border rounded bg-white overflow-hidden">
         <div className="px-4 py-3 border-b font-medium">ASN Detail</div>
 
         {!selectedId ? (
@@ -864,7 +824,7 @@ export default function InboundAsnV2Page() {
                         <td className="px-4 py-3 border-b text-right">{safeNum(line.asn_qty)}</td>
                         <td className="px-4 py-3 border-b text-right">{safeNum(line.received_qty)}</td>
                         <td className="px-4 py-3 border-b text-right">{safeNum(line.balance_qty)}</td>
-                        <td className="px-4 py-3 border-b">{fmtDate(line.created_at)}</td>
+                        <td className="px-4 py-3 border-b">{fmtDate(line.created_at) || "-"}</td>
                       </tr>
                     ))
                   )}
@@ -993,7 +953,7 @@ export default function InboundAsnV2Page() {
                         {row.computed_status || "-"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 border-b">{fmtDate(row.asn_created_at)}</td>
+                    <td className="px-4 py-3 border-b">{fmtDate(row.asn_created_at) || "-"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -106,6 +106,18 @@ export async function GET(req: NextRequest) {
       palletRows = palletData || [];
     }
 
+    // shipment_files counts
+    const fileCountMap = new Map<string, number>();
+    if (shipmentIds.length) {
+      const { data: fileRows } = await sb
+        .from("shipment_files")
+        .select("shipment_id")
+        .in("shipment_id", shipmentIds);
+      for (const row of fileRows ?? []) {
+        fileCountMap.set(row.shipment_id, (fileCountMap.get(row.shipment_id) ?? 0) + 1);
+      }
+    }
+
     const dnHeaderMap = new Map<string, any>();
     for (const row of dnHeaders) {
       dnHeaderMap.set(row.id, row);
@@ -141,11 +153,15 @@ export async function GET(req: NextRequest) {
     const totalWeightMap = new Map<string, number>();
     const totalCbmMap = new Map<string, number>();
 
+    // Deduplicate by pallet id — same pallet linked to multiple DNs must count as 1
+    const seenPalletIds = new Set<string>();
     for (const row of palletRows) {
       const shipmentId = row.shipment_id;
       const st = String(row.status || "").toUpperCase();
 
       if (st === "CANCELLED") continue;
+      if (seenPalletIds.has(row.id)) continue;
+      seenPalletIds.add(row.id);
 
       palletCountMap.set(shipmentId, (palletCountMap.get(shipmentId) || 0) + 1);
       totalBoxesMap.set(
@@ -197,6 +213,7 @@ export async function GET(req: NextRequest) {
         ship_from_summary: buildSummary(shipFromValues),
         ship_to_summary: buildSummary(shipToValues),
         dn_summary: buildSummary(dnValues),
+        doc_count: fileCountMap.get(row.id) ?? 0,
       };
     });
 

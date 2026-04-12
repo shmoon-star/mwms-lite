@@ -38,6 +38,14 @@ const groups = [
     label: "Monitor",
     items: [
       { href: "/monitor", label: "Monitor", sub: "" },
+      { href: "/monitor/analytics", label: "Analytics", sub: "성과 시각화" },
+      { href: "/dashboard", label: "Upcoming", sub: "60일 일정 한눈에" },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { href: "/admin/users", label: "Users", sub: "" },
     ],
   },
 ];
@@ -56,7 +64,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-56 min-h-screen border-r flex flex-col" style={{ width: 220, background: "#f9fafb" }}>
+    <aside className="w-56 border-r flex flex-col" style={{ width: 220, minWidth: 220, height: "100vh", position: "sticky", top: 0, background: "#f9fafb", overflowY: "auto" }}>
       {/* 로고 */}
       <div style={{ padding: "18px 16px 10px", fontSize: 15, fontWeight: 800, color: "#111", letterSpacing: "-0.3px", borderBottom: "1px solid #e5e7eb", background: "#fff" }}>
         SCM System

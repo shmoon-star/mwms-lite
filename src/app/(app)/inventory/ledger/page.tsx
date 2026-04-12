@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type LedgerRow = {
   id?: string;
@@ -165,7 +166,7 @@ export default function InventoryLedgerPage() {
 
               <td style={td}>{r.related_no || "-"}</td>
 
-              <td style={td}>{r.display_time || r.created_at || "-"}</td>
+              <td style={td}>{fmtDate(r.display_time) || fmtDate(r.created_at) || "-"}</td>
             </tr>
           ))}
         </tbody>

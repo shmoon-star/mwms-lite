@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type DnItem = {
   id: string;
@@ -12,6 +13,18 @@ type DnItem = {
   ship_to: string | null;
   created_at: string | null;
   confirmed_at: string | null;
+  shipped_at: string | null;
+  planned_gi_date: string | null;
+  planned_delivery_date: string | null;
+  qty_total: number;
+};
+
+type Summary = {
+  total_dn: number;
+  open_dn: number;
+  shipped_dn: number;
+  total_qty: number;
+  shipped_qty: number;
 };
 
 function formatDate(v: string | null) {
@@ -44,11 +57,16 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const OPEN_S  = ["PENDING","RESERVED","PICKED","PACKING","PACKED"];
+const CLOSED_S = ["SHIPPED","CONFIRMED","CANCELLED"];
+
 export default function BuyerDnPage() {
   const [items, setItems] = useState<DnItem[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all"|"open"|"closed">("all");
   const [buyerCode, setBuyerCode] = useState<string | null>(null);
 
   async function load() {
@@ -67,6 +85,7 @@ export default function BuyerDnPage() {
       }
 
       setItems(json.data ?? []);
+      setSummary(json.summary ?? null);
       setBuyerCode(json.buyer_code ?? null);
     } catch (e: any) {
       setError(e.message);
@@ -78,53 +97,85 @@ export default function BuyerDnPage() {
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
+    let result = items;
+    if (statusFilter === "open")
+      result = result.filter(r => OPEN_S.includes(String(r.status ?? "").toUpperCase()));
+    else if (statusFilter === "closed")
+      result = result.filter(r => CLOSED_S.includes(String(r.status ?? "").toUpperCase()));
     const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((row) =>
+    if (!q) return result;
+    return result.filter((row) =>
       [row.dn_no, row.status, row.ship_from ?? "", row.ship_to ?? ""]
         .join(" ").toLowerCase().includes(q)
     );
-  }, [items, query]);
+  }, [items, query, statusFilter]);
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Delivery Notes</h1>
-        {buyerCode && (
-          <p style={{ color: "#6b7280", marginTop: 4, fontSize: 14 }}>
-            Buyer: <strong>{buyerCode}</strong>
-          </p>
-        )}
+      {/* 헤더 */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Delivery Notes</h1>
+          {buyerCode && (
+            <p style={{ color: "#6b7280", marginTop: 4, fontSize: 14 }}>
+              Buyer: <strong>{buyerCode}</strong>
+            </p>
+          )}
+        </div>
+        <button
+          onClick={load}
+          style={{ padding: "9px 18px", border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", fontSize: 13, cursor: "pointer" }}
+        >
+          Refresh
+        </button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
+      {/* 서머리 카드 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
+        {[
+          { label: "Total DN",   value: summary?.total_dn ?? 0,   sub: "# of delivery notes" },
+          { label: "Open DN",    value: summary?.open_dn ?? 0,    sub: "Pending / Packing" },
+          { label: "Shipped",    value: summary?.shipped_dn ?? 0, sub: "Shipped / Confirmed" },
+          { label: "Total Qty",  value: summary?.total_qty ?? 0,  sub: "∑ qty ordered" },
+          { label: "Shipped Qty",value: summary?.shipped_qty ?? 0,sub: "∑ qty shipped", highlight: false },
+        ].map(({ label, value, sub }) => (
+          <div key={label} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: "16px 20px", background: "#fff" }}>
+            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.2 }}>{value.toLocaleString()}</div>
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>{sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 검색 + 상태 필터 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search DN No / Status..."
-          style={{
-            padding: "10px 14px",
-            border: "1px solid #d1d5db",
-            borderRadius: 8,
-            fontSize: 14,
-            width: 340,
-            outline: "none",
-          }}
+          style={{ padding: "9px 14px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, width: 280, outline: "none" }}
         />
-        <button
-          onClick={load}
-          style={{
-            marginLeft: 8,
-            padding: "10px 16px",
-            border: "1px solid #d1d5db",
-            borderRadius: 8,
-            background: "#fff",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
+        {(["all","open","closed"] as const).map(f => (
+          <button
+            key={f}
+            onClick={() => setStatusFilter(f)}
+            style={{
+              padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer",
+              border: statusFilter === f ? "none" : "1px solid #d1d5db",
+              background: statusFilter === f ? "#111" : "#fff",
+              color: statusFilter === f ? "#fff" : "#374151",
+            }}
+          >
+            {f === "all" ? "All" : f === "open" ? "Open" : "Closed"}
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        <a
+          href="/api/buyer/dn/export"
+          style={{ padding: "8px 14px", border: "1px solid #d1d5db", borderRadius: 8, background: "#fff", fontSize: 13, textDecoration: "none", color: "#374151" }}
         >
-          Refresh
-        </button>
+          ⬇ CSV
+        </a>
       </div>
 
       {loading ? (
@@ -142,14 +193,17 @@ export default function BuyerDnPage() {
                 <th style={th}>Status</th>
                 <th style={th}>Ship From</th>
                 <th style={th}>Ship To</th>
+                <th style={{ ...th, textAlign: "right" }}>Qty</th>
+                <th style={th}>Planned GI</th>
+                <th style={th}>Planned Ship</th>
+                <th style={th}>Shipped</th>
                 <th style={th}>Created</th>
-                <th style={th}>Confirmed</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>
+                  <td colSpan={8} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>
                     No delivery notes found
                   </td>
                 </tr>
@@ -160,8 +214,11 @@ export default function BuyerDnPage() {
                     <td style={td}><StatusBadge status={row.status} /></td>
                     <td style={td}>{row.ship_from ?? "-"}</td>
                     <td style={td}>{row.ship_to ?? "-"}</td>
-                    <td style={td}>{formatDate(row.created_at)}</td>
-                    <td style={td}>{formatDate(row.confirmed_at)}</td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{row.qty_total ?? 0}</td>
+                    <td style={td}>{formatDate(row.planned_gi_date)}</td>
+                    <td style={td}>{formatDate(row.planned_delivery_date)}</td>
+                    <td style={td}>{fmtDate(row.shipped_at) || "-"}</td>
+                    <td style={td}>{fmtDate(row.created_at) || "-"}</td>
                   </tr>
                 ))
               )}

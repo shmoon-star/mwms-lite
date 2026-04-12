@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type DnLine = {
   id: string;
@@ -58,8 +59,7 @@ function safeNum(v: unknown) {
 }
 
 function fmt(v?: string | null) {
-  if (!v) return "-";
-  try { return new Date(v).toLocaleString("ko-KR"); } catch { return v; }
+  return fmtDate(v) || "-";
 }
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {

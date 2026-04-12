@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,9 @@ export async function GET() {
       lineMap.get(key)!.push(line);
     }
 
+    const skuList = Array.from(new Set((lines ?? []).map((l: any) => l.sku).filter(Boolean)));
+    const productMaster = await loadProductsBySkus(skuList, supabase);
+
     const rows: string[] = [];
     rows.push([
       "dn_no",
@@ -56,6 +60,8 @@ export async function GET() {
       "reserved_at",
       "shipped_at",
       "sku",
+      "barcode",
+      "description",
       "qty",
       "qty_ordered",
       "qty_reserved",
@@ -81,7 +87,7 @@ export async function GET() {
           esc(h.confirmed_at),
           esc(h.reserved_at),
           esc(h.shipped_at),
-          "", "", "", "", "", ""
+          "", "", "", "", "", "", "", ""
         ].join(","));
         continue;
       }
@@ -102,6 +108,8 @@ export async function GET() {
           esc(h.reserved_at),
           esc(h.shipped_at),
           esc(l.sku),
+          esc(productMaster.barcodeOf(l.sku) ?? ""),
+          esc(productMaster.nameOf(l.sku) ?? ""),
           esc(l.qty),
           esc(l.qty_ordered),
           esc(l.qty_reserved),

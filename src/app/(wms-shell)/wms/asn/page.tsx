@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate as fmtDateYmd } from "@/lib/fmt";
 
 type WmsAsnItem = {
   id: string;
@@ -172,7 +173,7 @@ export default function WmsAsnListPage() {
                     <td className="px-4 py-3 border-b text-right">{row.asn_qty}</td>
                     <td className="px-4 py-3 border-b text-right">{row.received_qty}</td>
                     <td className="px-4 py-3 border-b text-right">{row.balance_qty}</td>
-                    <td className="px-4 py-3 border-b">{fmtDate(row.created_at)}</td>
+                    <td className="px-4 py-3 border-b">{fmtDateYmd(row.created_at) || "-"}</td>
                     <td className="px-4 py-3 border-b">
                       <Link
                         href={`/wms/asn/${row.id}`}

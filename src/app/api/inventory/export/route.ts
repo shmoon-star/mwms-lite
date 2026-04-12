@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -24,26 +25,20 @@ export async function GET() {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 
+    const skuList = (data ?? []).map((r: any) => r.sku).filter(Boolean);
+    const productMaster = await loadProductsBySkus(skuList, supabase);
+
     const rows: string[] = [];
-    rows.push([
-      "sku",
-      "qty_onhand",
-      "qty_reserved",
-      "allocated",
-      "available",
-    ].join(","));
+    rows.push(["sku", "barcode", "description", "qty_onhand", "qty_reserved", "available"].join(","));
 
     for (const r of data ?? []) {
-      const available =
-        Number(r.qty_onhand ?? 0) -
-        Number(r.qty_reserved ?? 0) -
-        Number(r.allocated ?? 0);
-
+      const available = Number(r.qty_onhand ?? 0) - Number(r.qty_reserved ?? 0);
       rows.push([
         esc(r.sku),
+        esc(productMaster.barcodeOf(r.sku) ?? ""),
+        esc(productMaster.nameOf(r.sku) ?? ""),
         esc(r.qty_onhand),
         esc(r.qty_reserved),
-        esc(r.allocated),
         esc(available),
       ].join(","));
     }

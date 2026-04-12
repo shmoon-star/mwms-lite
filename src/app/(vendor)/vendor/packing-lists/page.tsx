@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type PackingListItem = {
   id: string;
@@ -233,11 +234,11 @@ export default function VendorPackingListsPage() {
                     </td>
 
                     <td className="px-4 py-4">
-                      {formatDateTime(row.created_at)}
+                      {fmtDate(row.created_at) || "-"}
                     </td>
 
                     <td className="px-4 py-4">
-                      {formatDateTime(row.finalized_at)}
+                      {fmtDate(row.finalized_at) || "-"}
                     </td>
 
                     <td className="px-4 py-4">

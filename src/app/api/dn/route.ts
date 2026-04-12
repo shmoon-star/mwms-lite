@@ -18,7 +18,7 @@ export async function GET() {
 
     const { data: headers, error: headerError } = await supabase
       .from("dn_header")
-      .select("id, dn_no, status, ship_from, ship_to, created_at, confirmed_at")
+      .select("id, dn_no, status, ship_from, ship_to, created_at, confirmed_at, shipped_at, planned_gi_date, planned_delivery_date")
       .order("created_at", { ascending: false });
 
     if (headerError) throw headerError;

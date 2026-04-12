@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fmtDate } from "@/lib/fmt";
 
 type ASNLine = {
   id: string;
@@ -228,7 +229,7 @@ export default function ASNDetailClient({ id }: { id: string }) {
         <b>Status:</b> {statusLabel}
       </div>
       <div style={{ marginBottom: 16 }}>
-        <b>Created At:</b> {asn.created_at ?? "-"}
+        <b>Created At:</b> {fmtDate(asn.created_at) || "-"}
       </div>
 
       {renderActionArea()}
@@ -250,7 +251,7 @@ export default function ASNDetailClient({ id }: { id: string }) {
             <tr key={line.id}>
               <td style={td}>{line.sku}</td>
               <td style={td}>{line.qty_expected}</td>
-              <td style={td}>{line.created_at ?? "-"}</td>
+              <td style={td}>{fmtDate(line.created_at) || "-"}</td>
             </tr>
           ))}
         </tbody>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { fmtDate } from "@/lib/fmt";
 
 type PoLine = {
   id: string;
@@ -124,8 +125,8 @@ export default function BuyerPoDetailPage() {
           <InfoRow label="Vendor" value={`${po.vendor_code} · ${po.vendor_name}`} />
           <InfoRow label="Buyer" value={`${po.buyer_code} · ${po.buyer_name}`} />
           <InfoRow label="ETA" value={po.eta} />
-          <InfoRow label="Created" value={formatDate(po.created_at)} />
-          {po.confirmed_at && <InfoRow label="Confirmed" value={formatDate(po.confirmed_at)} />}
+          <InfoRow label="Created" value={fmtDate(po.created_at) || "-"} />
+          {po.confirmed_at && <InfoRow label="Confirmed" value={fmtDate(po.confirmed_at) || "-"} />}
         </div>
       </div>
 

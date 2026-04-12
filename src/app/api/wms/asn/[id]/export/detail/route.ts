@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -46,23 +47,9 @@ export async function GET(_req: Request, { params }: Params) {
     new Set((lines || []).map((row: any) => row.sku).filter(Boolean))
   );
 
-  let products: Record<string, any>[] = [];
-  if (skuList.length > 0) {
-    const { data: productData } = await sb
-      .from("products")
-      .select("sku, name, brand")
-      .in("sku", skuList);
-
-    products = productData || [];
-  }
-
-  const productMap = new Map<string, Record<string, any>>();
-  for (const row of products) {
-    if (row.sku) productMap.set(row.sku, row);
-  }
+  const productMaster = await loadProductsBySkus(skuList, sb);
 
   const rows = (lines || []).map((row: any) => {
-    const product = productMap.get(row.sku);
     const expected = n(row.qty_expected ?? row.qty);
     const received = n(row.qty_received);
 
@@ -71,8 +58,9 @@ export async function GET(_req: Request, { params }: Params) {
       row.line_no ?? "",
       row.carton_no || "",
       row.sku || "",
-      product?.brand || "",
-      product?.name || "",
+      productMaster.barcodeOf(row.sku) ?? "",
+      productMaster.resolve(row.sku)?.brand || "",
+      productMaster.nameOf(row.sku) || "",
       expected,
       received,
       Math.max(expected - received, 0),
@@ -86,6 +74,7 @@ export async function GET(_req: Request, { params }: Params) {
       "line_no",
       "carton_no",
       "sku",
+      "barcode",
       "brand",
       "description",
       "expected_qty",

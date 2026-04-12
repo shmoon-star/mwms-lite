@@ -7,6 +7,7 @@ const items = [
   { href: "/buyer/po", label: "Purchase Orders" },
   { href: "/buyer/dn", label: "Delivery Notes" },
   { href: "/buyer/shipment", label: "Shipments" },
+  { href: "/buyer/monitor", label: "Monitor" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -20,10 +21,14 @@ export default function BuyerSidebar() {
     <aside
       style={{
         width: 260,
-        minHeight: "100vh",
+        minWidth: 260,
+        height: "100vh",
+        position: "sticky",
+        top: 0,
         borderRight: "1px solid #ddd",
         padding: 16,
         background: "#fff",
+        overflowY: "auto",
       }}
     >
       <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>

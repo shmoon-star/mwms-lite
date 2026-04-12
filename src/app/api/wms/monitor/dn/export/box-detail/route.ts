@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductsBySkus } from "@/lib/product-master";
 
 export const dynamic = "force-dynamic";
 
@@ -57,18 +58,14 @@ export async function GET(req: Request) {
     .select("*")
     .in("dn_box_id", (boxes || []).map((b) => b.id));
 
-  const { data: products } = await sb
-    .from("products")
-    .select("sku, name, brand");
-
-  const productMap = new Map(products?.map((p) => [p.sku, p]) || []);
+  const allSkus = (items || []).map((i: any) => i.sku).filter(Boolean);
+  const productMaster = await loadProductsBySkus(allSkus, sb);
   const boxMap = new Map(boxes?.map((b) => [b.id, b]) || []);
   const dnMap = new Map(filtered?.map((d) => [d.id, d]) || []);
 
   const rows = (items || []).map((i) => {
     const box = boxMap.get(i.dn_box_id);
     const dn = dnMap.get(box?.dn_id);
-    const product = productMap.get(i.sku);
 
     return [
       dn?.dn_no || "",
@@ -78,8 +75,9 @@ export async function GET(req: Request) {
       box?.box_weight_kg,
       box?.status,
       i.sku,
-      product?.brand || "",
-      product?.name || "",
+      productMaster.barcodeOf(i.sku) ?? "",
+      productMaster.resolve(i.sku)?.brand || "",
+      productMaster.nameOf(i.sku) || "",
       i.qty,
       i.source_type,
       box?.packed_at,
@@ -96,6 +94,7 @@ export async function GET(req: Request) {
       "box_weight_kg",
       "status",
       "sku",
+      "barcode",
       "brand",
       "description",
       "qty",
