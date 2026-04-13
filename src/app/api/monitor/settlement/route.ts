@@ -60,11 +60,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "settlement_month format: YYYY-MM" }, { status: 400 });
     }
 
-    if (dnItems.length === 0) {
-      return NextResponse.json({ ok: false, error: "At least one DN is required" }, { status: 400 });
-    }
-
-    const totalQty = dnItems.reduce((s, d) => s + (d.qty ?? 0), 0);
+    // DN 없이 수동 입력도 허용 (과거 데이터용)
+    const manualQty = Number(body.manual_qty ?? 0);
+    const totalQty = dnItems.length > 0
+      ? dnItems.reduce((s, d) => s + (d.qty ?? 0), 0)
+      : manualQty;
 
     // 정산 헤더 생성
     const { data: settlement, error: sErr } = await sb

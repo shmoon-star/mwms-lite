@@ -49,6 +49,8 @@ export default function SettlementListPage() {
   const [note, setNote] = useState("");
   const [creating, setCreating] = useState(false);
   const [createResult, setCreateResult] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualQty, setManualQty] = useState("");
 
   async function loadSettlements() {
     setLoading(true);
@@ -99,7 +101,9 @@ export default function SettlementListPage() {
     }
   }
 
-  const selectedQty = dnCandidates.filter(d => selectedDns.has(d.id)).reduce((s, d) => s + d.qty, 0);
+  const selectedQty = manualMode
+    ? (Number(manualQty) || 0)
+    : dnCandidates.filter(d => selectedDns.has(d.id)).reduce((s, d) => s + d.qty, 0);
   const fwd = Number(forwarding) || 0;
   const proc = Number(processing) || 0;
   const oth = Number(other) || 0;
@@ -107,11 +111,12 @@ export default function SettlementListPage() {
   const perPcs = selectedQty > 0 ? totalCost / selectedQty : 0;
 
   async function handleCreate() {
-    if (selectedDns.size === 0) { alert("DN을 선택하세요"); return; }
+    if (!manualMode && selectedDns.size === 0) { alert("DN을 선택하세요"); return; }
+    if (manualMode && !manualQty) { alert("수량을 입력하세요"); return; }
     setCreating(true);
     setCreateResult(null);
     try {
-      const dns = dnCandidates.filter(d => selectedDns.has(d.id)).map(d => ({
+      const dns = manualMode ? [] : dnCandidates.filter(d => selectedDns.has(d.id)).map(d => ({
         dn_id: d.id, dn_no: d.dn_no, ship_to: d.ship_to || "", shipped_at: d.shipped_at || "", qty: d.qty,
       }));
       const res = await fetch("/api/monitor/settlement", {
@@ -124,6 +129,7 @@ export default function SettlementListPage() {
           other_cost: oth,
           note,
           dns,
+          manual_qty: manualMode ? Number(manualQty) : 0,
         }),
       });
       const json = await res.json();
@@ -165,12 +171,28 @@ export default function SettlementListPage() {
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 24, background: "#fafafa" }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>New Settlement</h3>
 
+          {/* 모드 토글 */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <button onClick={() => setManualMode(false)} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 12, fontWeight: 600, cursor: "pointer", background: !manualMode ? "#111" : "#fff", color: !manualMode ? "#fff" : "#374151" }}>
+              DN 선택 모드
+            </button>
+            <button onClick={() => setManualMode(true)} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 12, fontWeight: 600, cursor: "pointer", background: manualMode ? "#111" : "#fff", color: manualMode ? "#fff" : "#374151" }}>
+              수동 입력 (과거 데이터)
+            </button>
+          </div>
+
           {/* 월 선택 + 비용 입력 */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: manualMode ? "1fr 1fr 1fr 1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
             <div>
               <label style={labelStyle}>정산 월 *</label>
               <input type="month" value={month} onChange={e => handleMonthChange(e.target.value)} style={inputStyle} />
             </div>
+            {manualMode && (
+              <div>
+                <label style={labelStyle}>총 수량 (PCS) *</label>
+                <input type="number" value={manualQty} onChange={e => setManualQty(e.target.value)} placeholder="0" style={inputStyle} />
+              </div>
+            )}
             <div>
               <label style={labelStyle}>포워딩비 (Forwarding)</label>
               <input type="number" value={forwarding} onChange={e => setForwarding(e.target.value)} placeholder="0" style={inputStyle} />
@@ -196,43 +218,47 @@ export default function SettlementListPage() {
             <MiniCard label="PCS당 기타" value={`₩${selectedQty > 0 ? (oth / selectedQty).toFixed(2) : "0"}`} />
           </div>
 
-          {/* DN 후보 테이블 */}
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            미정산 DN ({dnCandidates.length}건)
-            <button onClick={toggleAll} style={{ marginLeft: 12, fontSize: 11, color: "#2563eb", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
-              {selectedDns.size === dnCandidates.length ? "전체 해제" : "전체 선택"}
-            </button>
-          </div>
+          {/* DN 후보 테이블 (수동 모드에서는 숨김) */}
+          {!manualMode && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                미정산 DN ({dnCandidates.length}건)
+                <button onClick={toggleAll} style={{ marginLeft: 12, fontSize: 11, color: "#2563eb", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+                  {selectedDns.size === dnCandidates.length ? "전체 해제" : "전체 선택"}
+                </button>
+              </div>
 
-          {loadingDns ? (
-            <div style={{ padding: 20, textAlign: "center", color: "#9ca3af" }}>Loading...</div>
-          ) : dnCandidates.length === 0 ? (
-            <div style={{ padding: 20, textAlign: "center", color: "#9ca3af" }}>미정산 DN이 없습니다 (모두 정산 완료)</div>
-          ) : (
-            <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead style={{ position: "sticky", top: 0, background: "#f3f4f6" }}>
-                  <tr>
-                    <th style={th}></th>
-                    <th style={th}>DN No</th>
-                    <th style={th}>Ship To</th>
-                    <th style={th}>Confirmed At</th>
-                    <th style={{ ...th, textAlign: "right" }}>Qty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dnCandidates.map(d => (
-                    <tr key={d.id} style={{ borderTop: "1px solid #f0f0f0", background: selectedDns.has(d.id) ? "#eff6ff" : undefined }}>
-                      <td style={td}><input type="checkbox" checked={selectedDns.has(d.id)} onChange={() => toggleDn(d.id)} /></td>
-                      <td style={{ ...td, fontWeight: 600 }}>{d.dn_no}</td>
-                      <td style={td}>{d.ship_to || "-"}</td>
-                      <td style={td}>{fmtDate(d.confirmed_at) || fmtDate(d.shipped_at) || "-"}</td>
-                      <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{d.qty.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+              {loadingDns ? (
+                <div style={{ padding: 20, textAlign: "center", color: "#9ca3af" }}>Loading...</div>
+              ) : dnCandidates.length === 0 ? (
+                <div style={{ padding: 20, textAlign: "center", color: "#9ca3af" }}>미정산 DN이 없습니다 (모두 정산 완료)</div>
+              ) : (
+                <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead style={{ position: "sticky", top: 0, background: "#f3f4f6" }}>
+                      <tr>
+                        <th style={th}></th>
+                        <th style={th}>DN No</th>
+                        <th style={th}>Ship To</th>
+                        <th style={th}>Confirmed At</th>
+                        <th style={{ ...th, textAlign: "right" }}>Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dnCandidates.map(d => (
+                        <tr key={d.id} style={{ borderTop: "1px solid #f0f0f0", background: selectedDns.has(d.id) ? "#eff6ff" : undefined }}>
+                          <td style={td}><input type="checkbox" checked={selectedDns.has(d.id)} onChange={() => toggleDn(d.id)} /></td>
+                          <td style={{ ...td, fontWeight: 600 }}>{d.dn_no}</td>
+                          <td style={td}>{d.ship_to || "-"}</td>
+                          <td style={td}>{fmtDate(d.confirmed_at) || fmtDate(d.shipped_at) || "-"}</td>
+                          <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{d.qty.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
 
           <div style={{ marginTop: 12 }}>
