@@ -65,6 +65,46 @@ export default function SettlementListPage() {
     }
   }
 
+  async function handleDownloadAll() {
+    // 모든 settlement의 상세를 가져와서 하나의 CSV로
+    const allRows: string[] = [];
+    const headers = ["settlement_month", "status", "dn_no", "invoice_no", "bl_no", "ship_to", "shipped_at", "qty", "forwarding", "processing", "other", "total", "pcs_forwarding", "pcs_processing", "pcs_other", "pcs_total"];
+    allRows.push(headers.join(","));
+
+    for (const s of settlements) {
+      const res = await fetch(`/api/monitor/settlement/${s.id}`);
+      const json = await res.json();
+      if (!json.ok) continue;
+      const st = json.settlement;
+      const dns = json.dns ?? [];
+      const tq = st.total_qty || 0;
+      const fwd = Number(st.forwarding_cost ?? 0);
+      const proc = Number(st.processing_cost ?? 0);
+      const oth = Number(st.other_cost ?? 0);
+
+      if (dns.length === 0) {
+        // 수동 입력 (DN 없음)
+        allRows.push([st.settlement_month, st.status, "", "", "", "", "", tq, fwd, proc, oth, fwd + proc + oth, tq > 0 ? (fwd / tq).toFixed(2) : 0, tq > 0 ? (proc / tq).toFixed(2) : 0, tq > 0 ? (oth / tq).toFixed(2) : 0, tq > 0 ? ((fwd + proc + oth) / tq).toFixed(2) : 0].join(","));
+      } else {
+        for (const d of dns) {
+          const dFwd = tq > 0 ? Math.round((fwd / tq) * d.qty) : 0;
+          const dProc = tq > 0 ? Math.round((proc / tq) * d.qty) : 0;
+          const dOth = tq > 0 ? Math.round((oth / tq) * d.qty) : 0;
+          allRows.push([st.settlement_month, st.status, d.dn_no, d.invoice_no || "", d.bl_no || "", d.ship_to, d.shipped_at, d.qty, dFwd, dProc, dOth, dFwd + dProc + dOth, tq > 0 ? (fwd / tq).toFixed(2) : 0, tq > 0 ? (proc / tq).toFixed(2) : 0, tq > 0 ? (oth / tq).toFixed(2) : 0, tq > 0 ? ((fwd + proc + oth) / tq).toFixed(2) : 0].join(","));
+        }
+      }
+    }
+
+    const csv = "\uFEFF" + allRows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "settlement_all.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   useEffect(() => { loadSettlements(); }, []);
 
   async function loadDnCandidates() {
@@ -154,12 +194,21 @@ export default function SettlementListPage() {
           <h1 style={{ fontSize: 22, fontWeight: 700 }}>Monthly Settlement</h1>
           <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>월별 물류비 정산 (포워딩 + 입고/상품화 + 기타)</p>
         </div>
+        <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={handleDownloadAll}
+          disabled={settlements.length === 0}
+          style={{ padding: "8px 18px", border: "1.5px solid #d1d5db", borderRadius: 8, background: "#fff", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: settlements.length === 0 ? 0.4 : 1 }}
+        >
+          ↓ 전체 CSV
+        </button>
         <button
           onClick={() => { setShowCreate(!showCreate); if (!showCreate) loadDnCandidates(); setCreateResult(null); }}
           style={{ padding: "8px 18px", border: "1.5px solid #111", borderRadius: 8, background: showCreate ? "#111" : "#fff", color: showCreate ? "#fff" : "#111", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
         >
           {showCreate ? "Cancel" : "+ New Settlement"}
         </button>
+        </div>
       </div>
 
       {createResult && (

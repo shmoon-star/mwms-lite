@@ -23,7 +23,7 @@ type SettlementDetail = {
   confirmed_at: string | null;
 };
 
-type DnRow = { id: string; dn_id: string; dn_no: string; ship_to: string; shipped_at: string; qty: number; invoice_no?: string };
+type DnRow = { id: string; dn_id: string; dn_no: string; ship_to: string; shipped_at: string; qty: number; invoice_no?: string; bl_no?: string };
 
 export default function SettlementDetailPage() {
   const { id } = useParams<{ id: string }>();
