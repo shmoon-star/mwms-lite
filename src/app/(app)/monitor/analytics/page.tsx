@@ -190,18 +190,131 @@ function WaterfallLeadTime({
   );
 }
 
+/* ─── Settlement Summary ─── */
+type SettlementSummary = {
+  id: string;
+  settlement_month: string;
+  forwarding_cost: number;
+  processing_cost: number;
+  other_cost: number;
+  total_qty: number;
+  status: string;
+  dns: { dn_no: string; ship_to: string; qty: number }[];
+};
+
+function SettlementSection({ settlement }: { settlement: SettlementSummary | null }) {
+  if (!settlement) return null;
+
+  const s = settlement;
+  const totalCost = Number(s.forwarding_cost) + Number(s.processing_cost) + Number(s.other_cost);
+  const perPcs = s.total_qty > 0 ? totalCost / s.total_qty : 0;
+
+  // 바이어별 집계
+  const byBuyer: Record<string, number> = {};
+  for (const dn of s.dns) {
+    const buyer = dn.ship_to || "Unknown";
+    byBuyer[buyer] = (byBuyer[buyer] || 0) + dn.qty;
+  }
+  const buyerRows = Object.entries(byBuyer).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, background: "#fff" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>Monthly Settlement — {s.settlement_month}</div>
+          <div style={{ fontSize: 12, color: "#9ca3af" }}>바이어별 물류비 안분</div>
+        </div>
+        <Link href={`/monitor/settlement/${s.id}`} style={{ fontSize: 12, color: "#2563eb", textDecoration: "none" }}>
+          상세 보기 →
+        </Link>
+      </div>
+
+      {/* 요약 한 줄 */}
+      <div style={{ display: "flex", gap: 20, marginBottom: 16, flexWrap: "wrap" }}>
+        <MiniStat label="Total Cost" value={`₩${totalCost.toLocaleString()}`} />
+        <MiniStat label="Total PCS" value={s.total_qty.toLocaleString()} />
+        <MiniStat label="PCS당 비용" value={`₩${perPcs.toFixed(2)}`} accent />
+        <MiniStat label="포워딩" value={`₩${Number(s.forwarding_cost).toLocaleString()}`} />
+        <MiniStat label="상품화" value={`₩${Number(s.processing_cost).toLocaleString()}`} />
+        <MiniStat label="기타" value={`₩${Number(s.other_cost).toLocaleString()}`} />
+      </div>
+
+      {/* 바이어별 테이블 */}
+      {buyerRows.length > 0 && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: "#f3f4f6" }}>
+              <th style={{ padding: "6px 10px", textAlign: "left", fontWeight: 700 }}>Buyer (Ship To)</th>
+              <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>PCS</th>
+              <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>포워딩</th>
+              <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>상품화</th>
+              <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>기타</th>
+              <th style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>합계</th>
+            </tr>
+          </thead>
+          <tbody>
+            {buyerRows.map(([buyer, qty]) => {
+              const bFwd = s.total_qty > 0 ? Math.round((Number(s.forwarding_cost) / s.total_qty) * qty) : 0;
+              const bProc = s.total_qty > 0 ? Math.round((Number(s.processing_cost) / s.total_qty) * qty) : 0;
+              const bOth = s.total_qty > 0 ? Math.round((Number(s.other_cost) / s.total_qty) * qty) : 0;
+              return (
+                <tr key={buyer} style={{ borderTop: "1px solid #f0f0f0" }}>
+                  <td style={{ padding: "6px 10px", fontWeight: 600 }}>{buyer}</td>
+                  <td style={{ padding: "6px 10px", textAlign: "right" }}>{qty.toLocaleString()}</td>
+                  <td style={{ padding: "6px 10px", textAlign: "right" }}>₩{bFwd.toLocaleString()}</td>
+                  <td style={{ padding: "6px 10px", textAlign: "right" }}>₩{bProc.toLocaleString()}</td>
+                  <td style={{ padding: "6px 10px", textAlign: "right" }}>₩{bOth.toLocaleString()}</td>
+                  <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700 }}>₩{(bFwd + bProc + bOth).toLocaleString()}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: "#6b7280" }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: accent ? "#2563eb" : "#111" }}>{value}</div>
+    </div>
+  );
+}
+
 /* ─── Page ─── */
 export default function MonitorAnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [settlement, setSettlement] = useState<SettlementSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/monitor/analytics", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((json) => {
-        if (!json.ok) throw new Error(json.error);
-        setData(json);
+    // Analytics + 최신 정산 동시 조회
+    Promise.all([
+      fetch("/api/monitor/analytics", { cache: "no-store" }).then(r => r.json()),
+      fetch("/api/monitor/settlement", { cache: "no-store" }).then(r => r.json()),
+    ])
+      .then(([analyticsJson, settlementJson]) => {
+        if (!analyticsJson.ok) throw new Error(analyticsJson.error);
+        setData(analyticsJson);
+
+        // 최신 정산의 상세 가져오기
+        if (settlementJson.ok && settlementJson.items?.length > 0) {
+          const latest = settlementJson.items[0];
+          fetch(`/api/monitor/settlement/${latest.id}`, { cache: "no-store" })
+            .then(r => r.json())
+            .then(json => {
+              if (json.ok) {
+                setSettlement({
+                  ...json.settlement,
+                  dns: json.dns ?? [],
+                });
+              }
+            });
+        }
       })
       .catch((e) => setError(e?.message ?? "Failed"))
       .finally(() => setLoading(false));
@@ -245,6 +358,9 @@ export default function MonitorAnalyticsPage() {
               colors={["#14b8a6", "#2dd4bf", "#5eead4", "#99f6e4"]}
             />
           </div>
+
+          {/* 월정산 요약 */}
+          <SettlementSection settlement={settlement} />
         </div>
       ) : null}
     </div>

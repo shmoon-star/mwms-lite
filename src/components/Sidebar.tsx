@@ -40,6 +40,7 @@ const groups = [
       { href: "/monitor", label: "Monitor", sub: "" },
       { href: "/monitor/analytics", label: "Analytics", sub: "성과 시각화" },
       { href: "/monitor/buyer-trend", label: "Buyer Trend", sub: "바이어별 입출고" },
+      { href: "/monitor/settlement", label: "Settlement", sub: "월정산" },
       { href: "/dashboard", label: "Upcoming", sub: "60일 일정 한눈에" },
     ],
   },
