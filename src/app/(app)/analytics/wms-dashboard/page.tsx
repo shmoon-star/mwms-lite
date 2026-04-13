@@ -170,9 +170,11 @@ export default function WmsDashboardPage() {
         </div>
       )}
 
-      {!data && !loading ? (
+      {loading ? (
+        <div style={{ padding: 60, textAlign: "center", color: "#9ca3af" }}>Loading...</div>
+      ) : !data ? (
         <div style={{ padding: 60, textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
-          {loadingHistory ? "Loading..." : "WMS Excel 파일을 업로드하거나, 이력에서 날짜를 선택하세요."}
+          WMS Excel 파일을 업로드하거나, 이력에서 날짜를 선택하세요.
         </div>
       ) : (
         <>
