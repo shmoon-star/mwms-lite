@@ -39,11 +39,29 @@ export async function GET() {
       }
     }
 
+    // DN → shipment (invoice_no, bl_no) 매핑
+    const unsettledIds = (dns ?? []).filter((d: any) => !settledIds.has(d.id)).map((d: any) => d.id);
+    const invoiceMap = new Map<string, { invoice_no: string; bl_no: string }>();
+    if (unsettledIds.length > 0) {
+      const { data: sdRows } = await sb.from("shipment_dn").select("shipment_id, dn_id").in("dn_id", unsettledIds);
+      const shipIds = [...new Set((sdRows ?? []).map((r: any) => r.shipment_id).filter(Boolean))];
+      if (shipIds.length > 0) {
+        const { data: ships } = await sb.from("shipment_header").select("id, invoice_no, bl_no").in("id", shipIds);
+        const shipMap = new Map((ships ?? []).map((s: any) => [s.id, s]));
+        for (const sd of sdRows ?? []) {
+          const ship = shipMap.get(sd.shipment_id);
+          if (ship) invoiceMap.set(sd.dn_id, { invoice_no: ship.invoice_no || "", bl_no: ship.bl_no || "" });
+        }
+      }
+    }
+
     const items = (dns ?? [])
       .filter((d: any) => !settledIds.has(d.id))
       .map((d: any) => ({
         ...d,
         qty: lineQtyMap.get(d.id) ?? 0,
+        invoice_no: invoiceMap.get(d.id)?.invoice_no || "",
+        bl_no: invoiceMap.get(d.id)?.bl_no || "",
       }));
 
     return NextResponse.json({

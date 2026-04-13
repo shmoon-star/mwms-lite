@@ -28,6 +28,8 @@ type DnCandidate = {
   shipped_at: string | null;
   confirmed_at: string | null;
   qty: number;
+  invoice_no?: string;
+  bl_no?: string;
 };
 
 export default function SettlementListPage() {
@@ -239,6 +241,8 @@ export default function SettlementListPage() {
                       <tr>
                         <th style={th}></th>
                         <th style={th}>DN No</th>
+                        <th style={th}>Invoice</th>
+                        <th style={th}>BL No</th>
                         <th style={th}>Ship To</th>
                         <th style={th}>Confirmed At</th>
                         <th style={{ ...th, textAlign: "right" }}>Qty</th>
@@ -249,6 +253,8 @@ export default function SettlementListPage() {
                         <tr key={d.id} style={{ borderTop: "1px solid #f0f0f0", background: selectedDns.has(d.id) ? "#eff6ff" : undefined }}>
                           <td style={td}><input type="checkbox" checked={selectedDns.has(d.id)} onChange={() => toggleDn(d.id)} /></td>
                           <td style={{ ...td, fontWeight: 600 }}>{d.dn_no}</td>
+                          <td style={td}>{d.invoice_no || "-"}</td>
+                          <td style={td}>{d.bl_no || "-"}</td>
                           <td style={td}>{d.ship_to || "-"}</td>
                           <td style={td}>{fmtDate(d.confirmed_at) || fmtDate(d.shipped_at) || "-"}</td>
                           <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{d.qty.toLocaleString()}</td>
