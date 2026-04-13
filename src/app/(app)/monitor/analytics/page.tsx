@@ -17,6 +17,8 @@ type AnalyticsData = {
   outbound_compliance: Compliance;
   inbound_lead_time: LeadTimeData;
   outbound_lead_time: LeadTimeData;
+  buyers: string[];
+  current_buyer: string;
 };
 
 const GREEN = "#22c55e";
@@ -290,16 +292,20 @@ export default function MonitorAnalyticsPage() {
   const [settlement, setSettlement] = useState<SettlementSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [buyerFilter, setBuyerFilter] = useState("");
+  const [buyers, setBuyers] = useState<string[]>([]);
 
-  useEffect(() => {
-    // Analytics + 최신 정산 동시 조회
+  function loadData(buyer: string) {
+    setLoading(true);
+    const q = buyer ? `?buyer=${encodeURIComponent(buyer)}` : "";
     Promise.all([
-      fetch("/api/monitor/analytics", { cache: "no-store" }).then(r => r.json()),
+      fetch(`/api/monitor/analytics${q}`, { cache: "no-store" }).then(r => r.json()),
       fetch("/api/monitor/settlement", { cache: "no-store" }).then(r => r.json()),
     ])
       .then(([analyticsJson, settlementJson]) => {
         if (!analyticsJson.ok) throw new Error(analyticsJson.error);
         setData(analyticsJson);
+        if (analyticsJson.buyers) setBuyers(analyticsJson.buyers);
 
         // 당월 정산만 표시
         const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
@@ -320,7 +326,14 @@ export default function MonitorAnalyticsPage() {
       })
       .catch((e) => setError(e?.message ?? "Failed"))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadData(buyerFilter); }, []);
+
+  function handleBuyerChange(b: string) {
+    setBuyerFilter(b);
+    loadData(b);
+  }
 
   return (
     <div style={{ maxWidth: 1200 }}>
@@ -334,6 +347,25 @@ export default function MonitorAnalyticsPage() {
         <Link href="/monitor" style={{ padding: "8px 16px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, color: "#374151", textDecoration: "none" }}>
           ← Monitor
         </Link>
+      </div>
+
+      {/* 바이어 필터 */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
+        <button
+          onClick={() => handleBuyerChange("")}
+          style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid #d1d5db", fontSize: 12, fontWeight: 600, cursor: "pointer", background: !buyerFilter ? "#111" : "#fff", color: !buyerFilter ? "#fff" : "#374151" }}
+        >
+          ALL
+        </button>
+        {buyers.map(b => (
+          <button
+            key={b}
+            onClick={() => handleBuyerChange(b)}
+            style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid #d1d5db", fontSize: 12, fontWeight: 600, cursor: "pointer", background: buyerFilter === b ? "#111" : "#fff", color: buyerFilter === b ? "#fff" : "#374151" }}
+          >
+            {b}
+          </button>
+        ))}
       </div>
 
       {loading ? (

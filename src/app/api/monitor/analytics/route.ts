@@ -38,9 +38,11 @@ function weightedAvg(pairs: { days: number; qty: number }[]): number {
   return Math.round((weighted / totalQty) * 10) / 10;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const sb = await createClient();
+    const url = new URL(req.url);
+    const buyerFilter = url.searchParams.get("buyer") || ""; // ship_to 필터
 
     const [poRes, asnRes, asnLineRes, grRes, grLineRes, plRes, dnRes, dnLineRes, shipRes, shipDnRes] = await Promise.all([
       sb.from("po_header").select("id, eta, created_at"),
@@ -49,7 +51,7 @@ export async function GET() {
       sb.from("gr_header").select("id, asn_id, status, confirmed_at, created_at"),
       sb.from("gr_line").select("gr_id, qty_received").then(r => r),
       sb.from("packing_list_header").select("id, eta"),
-      sb.from("dn_header").select("id, status, planned_gi_date, shipped_at, confirmed_at, created_at"),
+      sb.from("dn_header").select("id, status, planned_gi_date, shipped_at, confirmed_at, created_at, ship_to"),
       sb.from("dn_lines").select("dn_id, qty").then(r => r),
       sb.from("shipment_header").select("id, status, etd, eta, atd, ata, created_at"),
       sb.from("shipment_dn").select("shipment_id, dn_id"),
@@ -69,7 +71,11 @@ export async function GET() {
     const grs = grRes.data ?? [];
     const grLines = grLineRes.data ?? [];
     const pls = plRes.data ?? [];
-    const dns = dnRes.data ?? [];
+    const allDns = dnRes.data ?? [];
+    // 바이어 필터 적용
+    const dns = buyerFilter ? allDns.filter((d: any) => String(d.ship_to || "").includes(buyerFilter)) : allDns;
+    // 사용 가능한 바이어 목록
+    const availableBuyers = [...new Set(allDns.map((d: any) => d.ship_to).filter(Boolean))].sort();
     const dnLines = dnLineRes.data ?? [];
     const ships = shipRes.data ?? [];
     const shipDns = shipDnRes.data ?? [];
@@ -263,6 +269,8 @@ export async function GET() {
       outbound_compliance: { on_time: outOnTimeQty, late: outLateQty, total: outOnTimeQty + outLateQty, unit: "qty" },
       inbound_lead_time: inboundLeadTime,
       outbound_lead_time: outboundLeadTime,
+      buyers: availableBuyers,
+      current_buyer: buyerFilter || "ALL",
     });
   } catch (e: any) {
     return NextResponse.json(
