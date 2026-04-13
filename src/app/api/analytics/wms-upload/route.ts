@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseWmsExcel } from "@/lib/wms-parser";
 import { createClient } from "@/lib/supabase/server";
+import { notifyInboundFromWmsData } from "@/lib/notify-inbound";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,14 @@ export async function POST(req: NextRequest) {
       // DB 저장 실패해도 응답은 반환
     }
 
-    return NextResponse.json({ ok: true, ...result });
+    // 입고 알림 발송 (최신 날짜의 IN 데이터가 있으면)
+    let notifyResult = null;
+    try {
+      const latestDate = result.dates[result.dates.length - 1]; // 가장 최근 날짜
+      notifyResult = await notifyInboundFromWmsData(result, latestDate);
+    } catch {}
+
+    return NextResponse.json({ ok: true, ...result, notifyResult });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
   }

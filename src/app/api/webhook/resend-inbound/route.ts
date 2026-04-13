@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseWmsExcel } from "@/lib/wms-parser";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { notifyInboundFromWmsData } from "@/lib/notify-inbound";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,14 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[WEBHOOK] WMS data saved: ${today}, ${result.totalRows} rows, IN=${result.summary.totalIN}, OUT=${result.summary.totalOUT}`);
+
+    // 입고 알림 발송
+    try {
+      const latestDate = result.dates[result.dates.length - 1];
+      await notifyInboundFromWmsData(result, latestDate);
+    } catch (notifyErr: any) {
+      console.error("[WEBHOOK] Notify error:", notifyErr?.message);
+    }
 
     return NextResponse.json({
       ok: true,
