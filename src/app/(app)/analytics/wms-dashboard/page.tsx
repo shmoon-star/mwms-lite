@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, ComposedChart, Line, LabelList,
@@ -22,12 +22,48 @@ type AnalyticsData = {
 const COLORS = ["#6366f1", "#3b82f6", "#14b8a6", "#f97316", "#ef4444", "#8b5cf6", "#ec4899", "#84cc16"];
 const STORE_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed"];
 
+type HistoryItem = { id: string; upload_date: string; file_name: string; source: string; total_rows: number; total_in: number; total_out: number; created_at: string };
+
 export default function WmsDashboardPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fileName, setFileName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [selectedDate, setSelectedDate] = useState("");
+
+  // 이력 목록 로드
+  useEffect(() => {
+    fetch("/api/analytics/wms-history")
+      .then(r => r.json())
+      .then(json => {
+        if (json.ok) setHistory(json.items ?? []);
+        // 최신 데이터 자동 로드
+        if (json.items?.length > 0) {
+          loadHistoryDate(json.items[0].upload_date);
+        }
+      })
+      .finally(() => setLoadingHistory(false));
+  }, []);
+
+  async function loadHistoryDate(date: string) {
+    setLoading(true);
+    setSelectedDate(date);
+    setError("");
+    try {
+      const res = await fetch(`/api/analytics/wms-history?date=${date}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      setData(json);
+      setFileName(`${json.upload?.file_name || date} (${json.upload?.source || "saved"})`);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleUpload() {
     const file = fileRef.current?.files?.[0];
@@ -46,6 +82,8 @@ export default function WmsDashboardPage() {
 
       if (!json.ok) throw new Error(json.error);
       setData(json);
+      // 이력 리프레시
+      fetch("/api/analytics/wms-history").then(r => r.json()).then(j => { if (j.ok) setHistory(j.items ?? []); });
     } catch (e: any) {
       setError(e?.message ?? "Failed to parse Excel");
     } finally {
@@ -62,25 +100,25 @@ export default function WmsDashboardPage() {
 
   // 매장별 차트 데이터
   const storeChartData = data ? (() => {
-    const storeNames = Object.keys(data.stores);
+    const storeNames = Object.keys(data!.stores);
     if (storeNames.length === 0) return [];
     return data.dates.map(date => {
       const row: Record<string, any> = { date };
       for (const store of storeNames) {
-        row[store] = data.stores[store][date] || 0;
+        row[store] = data!.stores[store][date] || 0;
       }
       return row;
     });
   })() : [];
 
-  const storeNames = data ? Object.keys(data.stores) : [];
+  const storeNames = data ? Object.keys(data!.stores) : [];
   const storeTotals = data ? storeNames.map(s => ({
     name: s,
-    total: Object.values(data.stores[s]).reduce((sum, v) => sum + v, 0),
+    total: Object.values(data!.stores[s]).reduce((sum, v) => sum + v, 0),
   })) : [];
 
   // 피벗 행 구성
-  const pivotRows = data ? Object.entries(data.pivot).sort((a, b) => {
+  const pivotRows = data ? Object.entries(data!.pivot).sort((a, b) => {
     const [aType] = a[0].split("|");
     const [bType] = b[0].split("|");
     if (aType !== bType) return aType === "IN" ? -1 : 1;
@@ -108,32 +146,51 @@ export default function WmsDashboardPage() {
         >
           {loading ? "분석 중..." : "Excel 파일 업로드"}
         </button>
-        {fileName && <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>{fileName} {data ? `(${data.totalRows.toLocaleString()}건 분석 완료)` : ""}</div>}
+        {fileName && <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>{fileName} {data ? `(${data!.totalRows.toLocaleString()}건 분석 완료)` : ""}</div>}
         {error && <div style={{ marginTop: 8, fontSize: 13, color: "#dc2626" }}>{error}</div>}
       </div>
 
-      {!data ? (
+      {/* 이력 선택 */}
+      {history.length > 0 && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280" }}>저장된 이력:</span>
+          {history.slice(0, 14).map(h => (
+            <button
+              key={h.id}
+              onClick={() => loadHistoryDate(h.upload_date)}
+              style={{
+                padding: "4px 12px", borderRadius: 20, border: "1px solid #d1d5db", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                background: selectedDate === h.upload_date ? "#111" : "#fff",
+                color: selectedDate === h.upload_date ? "#fff" : "#374151",
+              }}
+            >
+              {h.upload_date.slice(5)} <span style={{ fontSize: 9, opacity: 0.6 }}>{h.source === "email" ? "📧" : "📎"}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!data && !loading ? (
         <div style={{ padding: 60, textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
-          WMS Excel 파일을 업로드하면 대시보드가 자동으로 생성됩니다.
-          <br />Contents 시트의 Type, InOut Type, Date, PCS 컬럼이 필요합니다.
+          {loadingHistory ? "Loading..." : "WMS Excel 파일을 업로드하거나, 이력에서 날짜를 선택하세요."}
         </div>
       ) : (
         <>
           {/* Summary Cards */}
           <div style={{ display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-            <SummaryCard label="Total IN" value={data.summary.totalIN.toLocaleString()} sub="PCS" color="#6366f1" />
-            <SummaryCard label="Total OUT" value={data.summary.totalOUT.toLocaleString()} sub="PCS" color="#ef4444" />
-            <SummaryCard label="Net" value={(data.summary.totalIN - data.summary.totalOUT).toLocaleString()} sub="PCS" color={data.summary.totalIN >= data.summary.totalOUT ? "#22c55e" : "#ef4444"} />
-            <SummaryCard label="Days" value={String(data.summary.days)} sub="일" color="#3b82f6" />
-            <SummaryCard label="Avg IN/Day" value={Math.round(data.summary.totalIN / Math.max(data.summary.days, 1)).toLocaleString()} sub="PCS" color="#6366f1" />
-            <SummaryCard label="Avg OUT/Day" value={Math.round(data.summary.totalOUT / Math.max(data.summary.days, 1)).toLocaleString()} sub="PCS" color="#ef4444" />
+            <SummaryCard label="Total IN" value={data!.summary.totalIN.toLocaleString()} sub="PCS" color="#6366f1" />
+            <SummaryCard label="Total OUT" value={data!.summary.totalOUT.toLocaleString()} sub="PCS" color="#ef4444" />
+            <SummaryCard label="Net" value={(data!.summary.totalIN - data!.summary.totalOUT).toLocaleString()} sub="PCS" color={data!.summary.totalIN >= data!.summary.totalOUT ? "#22c55e" : "#ef4444"} />
+            <SummaryCard label="Days" value={String(data!.summary.days)} sub="일" color="#3b82f6" />
+            <SummaryCard label="Avg IN/Day" value={Math.round(data!.summary.totalIN / Math.max(data!.summary.days, 1)).toLocaleString()} sub="PCS" color="#6366f1" />
+            <SummaryCard label="Avg OUT/Day" value={Math.round(data!.summary.totalOUT / Math.max(data!.summary.days, 1)).toLocaleString()} sub="PCS" color="#ef4444" />
           </div>
 
           {/* Chart 1: 일별 IN/OUT */}
           <div style={{ ...cardStyle, marginBottom: 24 }}>
             <div style={cardTitle}>일별 입출고 PCS</div>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data.daily} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <BarChart data={data!.daily} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
@@ -166,8 +223,8 @@ export default function WmsDashboardPage() {
               <div style={cardTitle}>입출고 유형별 비중</div>
               <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
-                  <Pie data={data.inoutType} cx="50%" cy="45%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="value" strokeWidth={0}>
-                    {data.inoutType.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  <Pie data={data!.inoutType} cx="50%" cy="45%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="value" strokeWidth={0}>
+                    {data!.inoutType.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip formatter={(v: any) => `${Number(v).toLocaleString()} PCS`} />
                   <Legend verticalAlign="bottom" height={50} formatter={(v: any) => <span style={{ fontSize: 11 }}>{v}</span>} />
@@ -208,13 +265,13 @@ export default function WmsDashboardPage() {
           <div style={{ ...cardStyle, marginBottom: 24 }}>
             <div style={cardTitle}>브랜드별 판매 물량 (Top 10, OUT Only)</div>
             <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={data.brands} layout="vertical" margin={{ top: 5, right: 60, left: 10, bottom: 5 }}>
+              <BarChart data={data!.brands} layout="vertical" margin={{ top: 5, right: 60, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fontWeight: 600 }} width={110} />
                 <Tooltip formatter={(v: any) => `${Number(v).toLocaleString()} PCS`} />
                 <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={24} name="PCS">
-                  {data.brands.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  {data!.brands.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   <LabelList dataKey="value" position="right" formatter={(v: any) => Number(v).toLocaleString()} style={{ fontSize: 11, fontWeight: 700, fill: "#374151" }} />
                 </Bar>
               </BarChart>
@@ -230,7 +287,7 @@ export default function WmsDashboardPage() {
                   <tr style={{ background: "#f3f4f6" }}>
                     <th style={th}>Type</th>
                     <th style={th}>InOut Type</th>
-                    {data.dates.map(d => <th key={d} style={{ ...th, minWidth: 52, textAlign: "right" }}>{d}</th>)}
+                    {data!.dates.map(d => <th key={d} style={{ ...th, minWidth: 52, textAlign: "right" }}>{d}</th>)}
                     <th style={{ ...th, textAlign: "right", fontWeight: 800 }}>Total</th>
                   </tr>
                 </thead>
@@ -242,7 +299,7 @@ export default function WmsDashboardPage() {
                       <tr key={key}>
                         <td style={{ ...td, fontWeight: 700 }}>{type}</td>
                         <td style={td}>{inout}</td>
-                        {data.dates.map(d => {
+                        {data!.dates.map(d => {
                           const v = dateMap[d] || 0;
                           return <td key={d} style={{ ...td, textAlign: "right", color: v ? "#111" : "#d1d5db" }}>{v || "-"}</td>;
                         })}
@@ -252,11 +309,11 @@ export default function WmsDashboardPage() {
                   })}
                   <tr style={{ background: "#111", color: "#fff", fontWeight: 700 }}>
                     <td style={td} colSpan={2}>Total</td>
-                    {data.dates.map(d => {
-                      const dayTotal = data.daily.find(dd => dd.date === d);
+                    {data!.dates.map(d => {
+                      const dayTotal = data!.daily.find(dd => dd.date === d);
                       return <td key={d} style={{ ...td, textAlign: "right" }}>{((dayTotal?.IN ?? 0) + (dayTotal?.OUT ?? 0)).toLocaleString()}</td>;
                     })}
-                    <td style={{ ...td, textAlign: "right" }}>{(data.summary.totalIN + data.summary.totalOUT).toLocaleString()}</td>
+                    <td style={{ ...td, textAlign: "right" }}>{(data!.summary.totalIN + data!.summary.totalOUT).toLocaleString()}</td>
                   </tr>
                 </tbody>
               </table>
