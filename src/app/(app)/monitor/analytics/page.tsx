@@ -301,9 +301,11 @@ export default function MonitorAnalyticsPage() {
         if (!analyticsJson.ok) throw new Error(analyticsJson.error);
         setData(analyticsJson);
 
-        // 최신 정산의 상세 가져오기
+        // 당월 정산만 표시
+        const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
         if (settlementJson.ok && settlementJson.items?.length > 0) {
-          const latest = settlementJson.items[0];
+          const latest = settlementJson.items.find((s: any) => s.settlement_month === currentMonth) || null;
+          if (!latest) return;
           fetch(`/api/monitor/settlement/${latest.id}`, { cache: "no-store" })
             .then(r => r.json())
             .then(json => {

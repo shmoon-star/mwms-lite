@@ -23,7 +23,7 @@ type SettlementDetail = {
   confirmed_at: string | null;
 };
 
-type DnRow = { id: string; dn_id: string; dn_no: string; ship_to: string; shipped_at: string; qty: number };
+type DnRow = { id: string; dn_id: string; dn_no: string; ship_to: string; shipped_at: string; qty: number; invoice_no?: string };
 
 export default function SettlementDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -83,15 +83,14 @@ export default function SettlementDetailPage() {
   function handleDownloadCsv() {
     if (!settlement || dns.length === 0) return;
     const s = settlement;
-    const headers = ["settlement_month", "dn_no", "ship_to", "shipped_at", "qty", "forwarding", "processing", "other", "total"];
+    const headers = ["settlement_month", "dn_no", "invoice_no", "ship_to", "shipped_at", "qty", "forwarding", "processing", "other", "total"];
     const rows = dns.map(d => {
       const dnFwd = s.total_qty > 0 ? Math.round((Number(s.forwarding_cost) / s.total_qty) * d.qty) : 0;
       const dnProc = s.total_qty > 0 ? Math.round((Number(s.processing_cost) / s.total_qty) * d.qty) : 0;
       const dnOth = s.total_qty > 0 ? Math.round((Number(s.other_cost) / s.total_qty) * d.qty) : 0;
-      return [s.settlement_month, d.dn_no, d.ship_to, d.shipped_at, d.qty, dnFwd, dnProc, dnOth, dnFwd + dnProc + dnOth].join(",");
+      return [s.settlement_month, d.dn_no, d.invoice_no || "", d.ship_to, d.shipped_at, d.qty, dnFwd, dnProc, dnOth, dnFwd + dnProc + dnOth].join(",");
     });
-    // 합계 행
-    rows.push([s.settlement_month, "TOTAL", "", "", s.total_qty, Number(s.forwarding_cost), Number(s.processing_cost), Number(s.other_cost), Number(s.forwarding_cost) + Number(s.processing_cost) + Number(s.other_cost)].join(","));
+    rows.push([s.settlement_month, "TOTAL", "", "", "", s.total_qty, Number(s.forwarding_cost), Number(s.processing_cost), Number(s.other_cost), Number(s.forwarding_cost) + Number(s.processing_cost) + Number(s.other_cost)].join(","));
     const csv = "\uFEFF" + [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -204,6 +203,7 @@ export default function SettlementDetailPage() {
           <thead style={{ background: "#f3f4f6" }}>
             <tr>
               <th style={th}>DN No</th>
+              <th style={th}>Invoice No</th>
               <th style={th}>Ship To</th>
               <th style={th}>Shipped At</th>
               <th style={{ ...th, textAlign: "right" }}>Qty</th>
@@ -221,6 +221,7 @@ export default function SettlementDetailPage() {
               return (
                 <tr key={d.id} style={{ borderTop: "1px solid #f0f0f0" }}>
                   <td style={{ ...td, fontWeight: 600 }}>{d.dn_no}</td>
+                  <td style={td}>{d.invoice_no || "-"}</td>
                   <td style={td}>{d.ship_to || "-"}</td>
                   <td style={td}>{fmtDate(d.shipped_at) || "-"}</td>
                   <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{d.qty.toLocaleString()}</td>
@@ -232,7 +233,7 @@ export default function SettlementDetailPage() {
               );
             })}
             <tr style={{ background: "#111", color: "#fff", fontWeight: 700 }}>
-              <td style={td} colSpan={3}>합계</td>
+              <td style={td} colSpan={4}>합계</td>
               <td style={{ ...td, textAlign: "right" }}>{s.total_qty.toLocaleString()}</td>
               <td style={{ ...td, textAlign: "right" }}>₩{liveFwd.toLocaleString()}</td>
               <td style={{ ...td, textAlign: "right" }}>₩{liveProc.toLocaleString()}</td>

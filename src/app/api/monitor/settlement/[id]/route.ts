@@ -21,11 +21,31 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ ok: false, error: "Settlement not found" }, { status: 404 });
     }
 
-    const { data: dns, error: dnErr } = await sb
+    const { data: rawDns, error: dnErr } = await sb
       .from("monthly_settlement_dn")
       .select("*")
       .eq("settlement_id", id)
       .order("shipped_at", { ascending: true });
+
+    // DN의 shipment → invoice_no 조회
+    const dnIds = (rawDns ?? []).map((d: any) => d.dn_id).filter(Boolean);
+    let invoiceMap = new Map<string, string>();
+    if (dnIds.length > 0) {
+      const { data: sdRows } = await sb.from("shipment_dn").select("shipment_id, dn_id").in("dn_id", dnIds);
+      const shipIds = [...new Set((sdRows ?? []).map((r: any) => r.shipment_id).filter(Boolean))];
+      if (shipIds.length > 0) {
+        const { data: ships } = await sb.from("shipment_header").select("id, invoice_no").in("id", shipIds);
+        const shipInvMap = new Map((ships ?? []).map((s: any) => [s.id, s.invoice_no || ""]));
+        for (const sd of sdRows ?? []) {
+          invoiceMap.set(sd.dn_id, shipInvMap.get(sd.shipment_id) || "");
+        }
+      }
+    }
+
+    const dns = (rawDns ?? []).map((d: any) => ({
+      ...d,
+      invoice_no: invoiceMap.get(d.dn_id) || "",
+    }));
 
     if (dnErr) throw dnErr;
 

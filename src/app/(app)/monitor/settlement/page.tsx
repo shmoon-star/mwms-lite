@@ -305,6 +305,7 @@ export default function SettlementListPage() {
                     <span style={{ padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 600, background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>
                       {s.status}
                     </span>
+                    <span style={{ fontSize: 11, color: "#6b7280" }}>→ 상세/CSV</span>
                   </div>
                 </div>
               </Link>
