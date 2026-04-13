@@ -39,7 +39,14 @@ const groups = [
     items: [
       { href: "/monitor", label: "Monitor", sub: "" },
       { href: "/monitor/analytics", label: "Analytics", sub: "성과 시각화" },
+      { href: "/monitor/buyer-trend", label: "Buyer Trend", sub: "바이어별 입출고" },
       { href: "/dashboard", label: "Upcoming", sub: "60일 일정 한눈에" },
+    ],
+  },
+  {
+    label: "Extra",
+    items: [
+      { href: "/analytics/wms-dashboard", label: "WMS Daily", sub: "입출고 대시보드" },
     ],
   },
   {
@@ -60,6 +67,11 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   function isActive(href: string) {
+    // /monitor와 /monitor/analytics가 동시에 활성화되지 않도록
+    // 더 구체적인 경로가 있으면 정확히 매칭된 것만 활성화
+    const allHrefs = groups.flatMap(g => g.items.map(i => i.href));
+    const exactMatch = allHrefs.some(h => h !== href && h.startsWith(href + "/") && pathname.startsWith(h));
+    if (exactMatch) return false;
     return pathname === href || pathname.startsWith(href + "/");
   }
 

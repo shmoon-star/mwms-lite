@@ -8,6 +8,7 @@ const items = [
   { href: "/buyer/dn", label: "Delivery Notes" },
   { href: "/buyer/shipment", label: "Shipments" },
   { href: "/buyer/monitor", label: "Monitor" },
+  { href: "/buyer/wms-dashboard", label: "WMS Dashboard" },
 ];
 
 function isActive(pathname: string, href: string) {
