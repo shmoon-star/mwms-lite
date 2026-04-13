@@ -15,6 +15,7 @@ type ShipmentHeader = {
   atd: string | null;
   ata: string | null;
   buyer_gr_date: string | null;
+  invoice_no: string | null;
   vessel_name: string | null;
   container_no: string | null;
   seal_no: string | null;
@@ -52,7 +53,7 @@ export default function BuyerShipmentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<{ type: "success" | "error"; msg: string } | null>(null);
   const [form, setForm] = useState({
-    bl_no: "", etd: "", eta: "", atd: "", ata: "", buyer_gr_date: "",
+    bl_no: "", etd: "", eta: "", atd: "", ata: "", buyer_gr_date: "", invoice_no: "",
     vessel_name: "", container_no: "", seal_no: "", remark: "",
   });
 
@@ -64,6 +65,7 @@ export default function BuyerShipmentDetailPage() {
       atd: h.atd || "",
       ata: h.ata || "",
       buyer_gr_date: h.buyer_gr_date || "",
+      invoice_no: h.invoice_no || "",
       vessel_name: h.vessel_name || "",
       container_no: h.container_no || "",
       seal_no: h.seal_no || "",
@@ -154,6 +156,7 @@ export default function BuyerShipmentDetailPage() {
     { label: "ATD (실제 출발)", key: "atd", type: "date" },
     { label: "ATA (실제 도착)", key: "ata", type: "date" },
     { label: "Buyer GR Date", key: "buyer_gr_date", type: "date" },
+    { label: "Invoice No", key: "invoice_no" },
     { label: "Remark", key: "remark" },
   ];
 

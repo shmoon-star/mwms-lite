@@ -14,6 +14,7 @@ type Row = {
   atd: string | null;
   ata: string | null;
   buyer_gr_date: string | null;
+  invoice_no: string | null;
   vessel_name: string | null;
   container_no: string | null;
   seal_no: string | null;
@@ -200,7 +201,7 @@ export default function BuyerShipmentPage() {
         <table style={{ minWidth: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead style={{ background: "#f9fafb" }}>
             <tr>
-              {["Shipment No","Status","Ship From","Ship To","DN","Pallet","Boxes","Qty","Weight","CBM","BL No","ETD","ETA","ATD","ATA","GR Date","Vessel","Container","Files","Created"].map((h) => (
+              {["Shipment No","Status","Ship From","Ship To","DN","Pallet","Boxes","Qty","Weight","CBM","BL No","ETD","ETA","ATD","ATA","GR Date","Invoice","Vessel","Container","Files","Created"].map((h) => (
                 <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, color: "#374151", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
@@ -236,6 +237,7 @@ export default function BuyerShipmentPage() {
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{row.atd || "-"}</td>
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{row.ata || "-"}</td>
                   <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{row.buyer_gr_date || "-"}</td>
+                  <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>{row.invoice_no || "-"}</td>
                   <td style={{ padding: "10px 12px" }}>{row.vessel_name || "-"}</td>
                   <td style={{ padding: "10px 12px" }}>{row.container_no || "-"}</td>
                   <td style={{ padding: "10px 12px" }}>

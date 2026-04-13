@@ -25,7 +25,7 @@ export async function GET() {
     const shipmentIds = (shipments ?? []).map((s: any) => s.id).filter(Boolean);
 
     const csvHeaders = [
-      "shipment_no", "status", "bl_no", "etd", "eta", "atd", "ata", "buyer_gr_date",
+      "shipment_no", "status", "bl_no", "invoice_no", "etd", "eta", "atd", "ata", "buyer_gr_date",
       "vessel_name", "container_no", "seal_no", "remark",
       "dn_no", "dn_status", "ship_from", "ship_to", "planned_gi_date", "planned_delivery_date", "shipped_at",
       "pallet_no", "pallet_length", "pallet_width", "pallet_height", "pallet_weight_kg", "pallet_cbm",
@@ -146,6 +146,7 @@ export async function GET() {
         ship?.shipment_no ?? "",
         ship?.status ?? "",
         ship?.bl_no ?? "",
+        ship?.invoice_no ?? "",
         ship?.etd ?? "",
         ship?.eta ?? "",
         ship?.atd ?? "",

@@ -14,6 +14,7 @@ type ShipmentHeader = {
   atd: string | null;
   ata: string | null;
   buyer_gr_date: string | null;
+  invoice_no: string | null;
   vessel_name: string | null;
   container_no: string | null;
   seal_no: string | null;
@@ -105,6 +106,7 @@ export default function ScmShipmentDetailPage({
   const [atd, setAtd] = useState("");
   const [ata, setAta] = useState("");
   const [buyerGrDate, setBuyerGrDate] = useState("");
+  const [invoiceNo, setInvoiceNo] = useState("");
   const [vesselName, setVesselName] = useState("");
   const [containerNo, setContainerNo] = useState("");
   const [sealNo, setSealNo] = useState("");
@@ -142,6 +144,7 @@ export default function ScmShipmentDetailPage({
       setAtd(nextHeader?.atd || "");
       setAta(nextHeader?.ata || "");
       setBuyerGrDate(nextHeader?.buyer_gr_date || "");
+      setInvoiceNo(nextHeader?.invoice_no || "");
       setVesselName(nextHeader?.vessel_name || "");
       setContainerNo(nextHeader?.container_no || "");
       setSealNo(nextHeader?.seal_no || "");
@@ -233,6 +236,7 @@ export default function ScmShipmentDetailPage({
           atd,
           ata,
           buyer_gr_date: buyerGrDate,
+          invoice_no: invoiceNo,
           vessel_name: vesselName,
           container_no: containerNo,
           seal_no: sealNo,
@@ -443,6 +447,16 @@ export default function ScmShipmentDetailPage({
                 onChange={(e) => setAta(e.target.value)}
                 className="w-full rounded border px-3 py-2"
                 placeholder="Actual Time of Arrival"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block font-medium">Invoice No</label>
+              <input
+                value={invoiceNo}
+                onChange={(e) => setInvoiceNo(e.target.value)}
+                className="w-full rounded border px-3 py-2"
+                placeholder="Invoice Number"
               />
             </div>
 

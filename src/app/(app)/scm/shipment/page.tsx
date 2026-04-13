@@ -14,6 +14,7 @@ type Row = {
   atd: string | null;
   ata: string | null;
   buyer_gr_date: string | null;
+  invoice_no: string | null;
   vessel_name: string | null;
   container_no: string | null;
   seal_no: string | null;
@@ -237,6 +238,7 @@ export default function ScmShipmentPage() {
               <th className="px-3 py-3">ATD</th>
               <th className="px-3 py-3">ATA</th>
               <th className="px-3 py-3">GR Date</th>
+              <th className="px-3 py-3">Invoice</th>
               <th className="px-3 py-3">Vessel</th>
               <th className="px-3 py-3">Container</th>
               <th className="px-3 py-3">Files</th>
@@ -286,6 +288,7 @@ export default function ScmShipmentPage() {
                   <td className="px-3 py-2">{row.atd || "-"}</td>
                   <td className="px-3 py-2">{row.ata || "-"}</td>
                   <td className="px-3 py-2">{row.buyer_gr_date || "-"}</td>
+                  <td className="px-3 py-2">{row.invoice_no || "-"}</td>
                   <td className="px-3 py-2">{row.vessel_name || "-"}</td>
                   <td className="px-3 py-2">{row.container_no || "-"}</td>
                   <td className="px-3 py-2">

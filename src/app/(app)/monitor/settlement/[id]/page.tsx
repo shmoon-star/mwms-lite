@@ -80,6 +80,28 @@ export default function SettlementDetailPage() {
     }
   }
 
+  function handleDownloadCsv() {
+    if (!settlement || dns.length === 0) return;
+    const s = settlement;
+    const headers = ["settlement_month", "dn_no", "ship_to", "shipped_at", "qty", "forwarding", "processing", "other", "total"];
+    const rows = dns.map(d => {
+      const dnFwd = s.total_qty > 0 ? Math.round((Number(s.forwarding_cost) / s.total_qty) * d.qty) : 0;
+      const dnProc = s.total_qty > 0 ? Math.round((Number(s.processing_cost) / s.total_qty) * d.qty) : 0;
+      const dnOth = s.total_qty > 0 ? Math.round((Number(s.other_cost) / s.total_qty) * d.qty) : 0;
+      return [s.settlement_month, d.dn_no, d.ship_to, d.shipped_at, d.qty, dnFwd, dnProc, dnOth, dnFwd + dnProc + dnOth].join(",");
+    });
+    // 합계 행
+    rows.push([s.settlement_month, "TOTAL", "", "", s.total_qty, Number(s.forwarding_cost), Number(s.processing_cost), Number(s.other_cost), Number(s.forwarding_cost) + Number(s.processing_cost) + Number(s.other_cost)].join(","));
+    const csv = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `settlement_${s.settlement_month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleConfirm() {
     if (!confirm("정산을 확정하시겠습니까?")) return;
     setConfirming(true);
@@ -128,6 +150,7 @@ export default function SettlementDetailPage() {
           }}>{s.status}</span>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={handleDownloadCsv} style={btnStyle}>↓ CSV</button>
           {isDraft && !editing && (
             <button onClick={() => setEditing(true)} style={btnStyle}>Edit</button>
           )}
