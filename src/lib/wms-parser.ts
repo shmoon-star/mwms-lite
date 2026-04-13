@@ -8,8 +8,24 @@ export type WmsParseResult = {
   brands: { name: string; value: number }[];
   pivot: Record<string, Record<string, number>>;
   stores: Record<string, Record<string, number>>;
+  models: Record<string, Record<string, number>>; // date → { modelName: qty }
   summary: { totalIN: number; totalOUT: number; days: number };
 };
+
+/** Excel 시리얼 번호 → YYYY-MM-DD 변환 */
+function excelDateToString(v: any): string {
+  if (!v) return "";
+  const s = String(v).trim();
+  // 이미 YYYY-MM-DD 형식이면 그대로
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  // Excel 시리얼 번호 (숫자)
+  const n = Number(s);
+  if (!isNaN(n) && n > 40000 && n < 60000) {
+    const d = new Date((n - 25569) * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
+  return s;
+}
 
 /**
  * Excel 버퍼를 파싱하여 WMS 분석 데이터 반환
@@ -33,6 +49,7 @@ export function parseWmsExcel(buffer: Buffer): WmsParseResult {
   const pcsIdx = headers.indexOf("PCS");
   const brandIdx = headers.indexOf("Model Group");
   const venderIdx = headers.indexOf("Vender");
+  const modelNameIdx = headers.indexOf("Model Name");
 
   if (typeIdx < 0 || dateIdx < 0 || pcsIdx < 0) {
     throw new Error("Missing required columns: Type, Date, PCS");
@@ -43,13 +60,15 @@ export function parseWmsExcel(buffer: Buffer): WmsParseResult {
   const brands: Record<string, number> = {};
   const pivotRaw: Record<string, Record<string, number>> = {};
   const storeData: Record<string, Record<string, number>> = {};
+  const modelData: Record<string, Record<string, number>> = {}; // date → { modelName: qty } (IN only)
   let totalRows = 0;
 
   for (let i = 1; i < json.length; i++) {
     const row = json[i];
     const type = String(row[typeIdx] || "").trim();
     const inout = inoutIdx >= 0 ? String(row[inoutIdx] || "").trim() : "";
-    const date = String(row[dateIdx] || "").trim();
+    const rawDate = row[dateIdx];
+    const date = excelDateToString(rawDate);
     const pcs = Number(row[pcsIdx]) || 0;
 
     if (!type || !inout || !date) continue;
@@ -71,6 +90,15 @@ export function parseWmsExcel(buffer: Buffer): WmsParseResult {
     const pivotKey = `${type}|${inout}`;
     if (!pivotRaw[pivotKey]) pivotRaw[pivotKey] = {};
     pivotRaw[pivotKey][dShort] = (pivotRaw[pivotKey][dShort] || 0) + pcs;
+
+    // IN일 때 Model Name별 수집
+    if (type === "IN" && modelNameIdx >= 0) {
+      const modelName = String(row[modelNameIdx] || "").trim();
+      if (modelName) {
+        if (!modelData[dShort]) modelData[dShort] = {};
+        modelData[dShort][modelName] = (modelData[dShort][modelName] || 0) + pcs;
+      }
+    }
 
     if (type === "OUT" && inout !== "B2C Interface") {
       const store = venderIdx >= 0 ? String(row[venderIdx] || "").trim() : "";
@@ -106,6 +134,7 @@ export function parseWmsExcel(buffer: Buffer): WmsParseResult {
     brands: brandArr,
     pivot: pivotRaw,
     stores: storeData,
+    models: modelData,
     summary: { totalIN, totalOUT, days: dates.length },
   };
 }

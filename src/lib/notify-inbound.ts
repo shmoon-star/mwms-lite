@@ -23,6 +23,10 @@ export async function notifyInboundFromWmsData(
     return { sent: false, reason: `No IN data for ${checkDate}` };
   }
 
+  // 날짜 표시용 (MM-DD → YYYY-MM-DD)
+  const kstYear = kstNow.getFullYear();
+  const displayDate = checkDate.length === 5 ? `${kstYear}-${checkDate}` : checkDate;
+
   // IN 유형별 상세
   const inDetails: { type: string; qty: number }[] = [];
   for (const [key, dateMap] of Object.entries(result.pivot)) {
@@ -37,12 +41,19 @@ export async function notifyInboundFromWmsData(
     .map(d => `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee">${d.type}</td><td style="padding:6px 12px;border-bottom:1px solid #eee;text-align:right;font-weight:700">${d.qty.toLocaleString()} PCS</td></tr>`)
     .join("");
 
+  // Model Name별 상세 (IN)
+  const modelMap = result.models?.[checkDate] || {};
+  const modelEntries = Object.entries(modelMap).sort((a, b) => b[1] - a[1]);
+  const modelRows = modelEntries
+    .map(([name, qty]) => `<tr><td style="padding:4px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">${name}</td><td style="padding:4px 12px;border-bottom:1px solid #f0f0f0;text-align:right;font-size:12px;font-weight:600">${qty.toLocaleString()}</td></tr>`)
+    .join("");
+
   const totalOut = dayData.OUT || 0;
 
   const html = `
     <div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; max-width: 600px;">
       <h2 style="color: #111; margin-bottom: 4px;">WMS 입고 알림</h2>
-      <p style="color: #6b7280; margin-top: 0;">날짜: <strong>${checkDate}</strong></p>
+      <p style="color: #6b7280; margin-top: 0;">날짜: <strong>${displayDate}</strong></p>
 
       <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin: 16px 0;">
         <div style="font-size: 12px; color: #1e40af; font-weight: 600;">입고 (IN)</div>
@@ -61,6 +72,27 @@ export async function notifyInboundFromWmsData(
       </table>
       ` : ""}
 
+      ${modelEntries.length > 0 ? `
+      <div style="margin: 16px 0;">
+        <div style="font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 6px;">입고 상품 상세 (Model Name)</div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+          <thead>
+            <tr style="background: #f3f4f6;">
+              <th style="padding: 6px 12px; text-align: left;">Model Name</th>
+              <th style="padding: 6px 12px; text-align: right;">Qty</th>
+            </tr>
+          </thead>
+          <tbody>${modelRows}</tbody>
+          <tfoot>
+            <tr style="border-top: 2px solid #111;">
+              <td style="padding: 6px 12px; font-weight: 700;">합계</td>
+              <td style="padding: 6px 12px; text-align: right; font-weight: 700;">${dayData.IN.toLocaleString()} PCS</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      ` : ""}
+
       ${totalOut > 0 ? `
       <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; margin: 16px 0;">
         <div style="font-size: 12px; color: #991b1b; font-weight: 600;">출고 (OUT) 참고</div>
@@ -77,7 +109,7 @@ export async function notifyInboundFromWmsData(
 
   const mailResult = await sendMail({
     to: [], // TEST_MODE에서는 MAIL_TO_TEST로 자동 라우팅
-    subject: `[WMS] 입고 알림: ${checkDate} — ${dayData.IN.toLocaleString()} PCS`,
+    subject: `[WMS] 입고 알림: ${displayDate} — ${dayData.IN.toLocaleString()} PCS`,
     html,
   });
 
