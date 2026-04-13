@@ -196,6 +196,7 @@ export async function GET(req: NextRequest) {
         etd: row.etd || null,
         atd: row.atd || null,
         ata: row.ata || null,
+        buyer_gr_date: row.buyer_gr_date || null,
         vessel_name: row.vessel_name || null,
         container_no: row.container_no || null,
         seal_no: row.seal_no || null,
