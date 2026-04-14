@@ -39,10 +39,20 @@ export async function PATCH(
     if (close) {
       if (length <= 0 || width <= 0 || height <= 0) {
         return NextResponse.json(
-          {
-            ok: false,
-            error: "length / width / height are required before close",
-          },
+          { ok: false, error: "length / width / height are required before close" },
+          { status: 400 }
+        );
+      }
+
+      // 박스 1개 이상 필수
+      const { data: boxes } = await sb
+        .from("pallet_box")
+        .select("id")
+        .eq("pallet_id", palletId);
+
+      if (!boxes || boxes.length === 0) {
+        return NextResponse.json(
+          { ok: false, error: "Cannot close pallet without any scanned boxes" },
           { status: 400 }
         );
       }

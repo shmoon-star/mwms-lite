@@ -346,6 +346,40 @@ export default function WmsShipmentDetailPage({
     }
   }
 
+  const [savingShipment, setSavingShipment] = useState(false);
+
+  const allPalletsClosed = useMemo(() => {
+    const active = pallets.filter(p => String(p.status || "").toUpperCase() !== "CANCELLED");
+    return active.length > 0 && active.every(p => String(p.status || "").toUpperCase() === "CLOSED");
+  }, [pallets]);
+
+  async function handleShipmentSave() {
+    if (!shipmentId) return;
+    if (!allPalletsClosed) {
+      alert("All pallets must be closed first");
+      return;
+    }
+
+    const ok = confirm("모든 팔레트가 마감되었습니다. Shipment 상태를 업데이트하시겠습니까?");
+    if (!ok) return;
+
+    setSavingShipment(true);
+    try {
+      const res = await fetch(`/api/scm/shipment/${shipmentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!json?.ok) throw new Error(json?.error || "Failed");
+      await load(shipmentId);
+    } catch (e: any) {
+      alert(e?.message || "Failed to save shipment");
+    } finally {
+      setSavingShipment(false);
+    }
+  }
+
   const selectedPalletScans = useMemo(
     () => recentScans.filter((x) => x.pallet_id === selectedPalletId),
     [recentScans, selectedPalletId]
@@ -416,13 +450,22 @@ export default function WmsShipmentDetailPage({
           </div>
         </div>
 
-        <button
-          onClick={addPallet}
-          disabled={creatingPallet}
-          className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          {creatingPallet ? "Creating..." : "Add Pallet"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleShipmentSave}
+            disabled={savingShipment || !allPalletsClosed}
+            className="rounded bg-black px-3 py-2 text-sm text-white hover:bg-gray-800 disabled:opacity-40"
+          >
+            {savingShipment ? "Saving..." : "Save Shipment"}
+          </button>
+          <button
+            onClick={addPallet}
+            disabled={creatingPallet}
+            className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {creatingPallet ? "Creating..." : "Add Pallet"}
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
