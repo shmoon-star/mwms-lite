@@ -69,7 +69,7 @@ export default function PackingListNewClient({ initialPoNo = "" }: { initialPoNo
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [poLines, setPoLines] = useState<{ id: string; sku: string; qty_ordered: number }[]>([]);
+  const [poLines, setPoLines] = useState<{ id: string; sku: string; description?: string; qty_ordered: number }[]>([]);
   const [loadingLines, setLoadingLines] = useState(false);
 
   const selectedPo = useMemo(() => {
@@ -415,6 +415,7 @@ export default function PackingListNewClient({ initialPoNo = "" }: { initialPoNo
                   <tr>
                     <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 700, fontSize: 12 }}>#</th>
                     <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 700, fontSize: 12 }}>SKU</th>
+                    <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 700, fontSize: 12 }}>Description</th>
                     <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12 }}>Ordered Qty</th>
                   </tr>
                 </thead>
@@ -423,11 +424,12 @@ export default function PackingListNewClient({ initialPoNo = "" }: { initialPoNo
                     <tr key={line.id} style={{ borderTop: "1px solid #f0f0f0" }}>
                       <td style={{ padding: "6px 12px", color: "#9ca3af" }}>{idx + 1}</td>
                       <td style={{ padding: "6px 12px", fontWeight: 600, fontFamily: "monospace" }}>{line.sku}</td>
+                      <td style={{ padding: "6px 12px", fontSize: 12, color: "#6b7280" }}>{line.description || "-"}</td>
                       <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600 }}>{line.qty_ordered.toLocaleString()}</td>
                     </tr>
                   ))}
                   <tr style={{ borderTop: "2px solid #111", fontWeight: 700 }}>
-                    <td style={{ padding: "8px 12px" }} colSpan={2}>합계</td>
+                    <td style={{ padding: "8px 12px" }} colSpan={3}>합계</td>
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>{poLines.reduce((s, l) => s + l.qty_ordered, 0).toLocaleString()}</td>
                   </tr>
                 </tbody>

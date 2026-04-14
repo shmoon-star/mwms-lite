@@ -77,9 +77,21 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       throw new Error(linesError.message);
     }
 
-    const normalizedLines = (lines ?? []).map((line) => ({
+    // SKU → description 조회
+    const skus = (lines ?? []).map((l: any) => l.sku).filter(Boolean);
+    const productMap = new Map<string, string>();
+    if (skus.length > 0) {
+      const { data: products } = await supabase
+        .from("products")
+        .select("sku, name")
+        .in("sku", skus);
+      for (const p of products ?? []) productMap.set(p.sku, p.name || "");
+    }
+
+    const normalizedLines = (lines ?? []).map((line: any) => ({
       id: line.id,
       sku: line.sku,
+      description: productMap.get(line.sku) || "",
       qty_ordered: Number(line.qty_ordered ?? line.qty ?? 0),
     }));
 
