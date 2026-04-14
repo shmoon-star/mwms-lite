@@ -557,27 +557,30 @@ export default function WmsDnDetailPage({
 
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-6 space-y-4">
-          <div className="rounded-xl border p-4 space-y-3">
+          <div className="rounded-xl border p-4 space-y-4">
             <div>
-              <h2 className="text-lg font-semibold">Create Box</h2>
+              <h2 className="text-lg font-semibold">Box Packing</h2>
               <p className="text-sm text-gray-500">
-                박스 껍데기를 먼저 생성합니다. 아이템은 아래에서 추가합니다.
+                스캔 → 키인 → 저장 → 프린트 순서로 진행합니다.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
+            {/* ── 스캔 영역 ── */}
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-3">
+              <div className="text-xs font-bold text-blue-700 uppercase tracking-wide">Scan</div>
+
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">① Box No *</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">① Box No *</label>
                 <input
                   value={newBoxNo}
                   onChange={(e) => setNewBoxNo(e.target.value)}
-                  placeholder="Box No 스캔 또는 입력"
+                  placeholder="Box No 스캔"
                   className="w-full rounded border px-3 py-2 text-sm font-mono"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">② Box Type (1~5)</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">② Box Type (1~5)</label>
                 <input
                   value={newBoxType}
                   onChange={(e) => setNewBoxType(e.target.value)}
@@ -588,188 +591,87 @@ export default function WmsDnDetailPage({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">③ Weight (kg)</label>
-                <input
-                  value={newBoxWeightKg}
-                  onChange={(e) => setNewBoxWeightKg(e.target.value)}
-                  placeholder="0"
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  type="number"
-                />
+                <label className="block text-xs font-medium text-gray-600 mb-1">③ SKU / Barcode 스캔</label>
+                <div className="flex gap-2">
+                  <input
+                    ref={barcodeRef}
+                    type="text"
+                    value={barcodeInput}
+                    onChange={(e) => { setBarcodeInput(e.target.value); setScanError(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleBarcodeSearch(); } }}
+                    placeholder="바코드 스캔 또는 SKU 입력 후 Enter"
+                    className="flex-1 rounded border px-3 py-2 text-sm font-mono"
+                    autoComplete="off"
+                  />
+                  <button type="button" onClick={handleBarcodeSearch} className="rounded border px-3 py-2 text-sm bg-white hover:bg-gray-100">조회</button>
+                </div>
+                {scanError && <div className="text-xs text-red-600 mt-1">{scanError}</div>}
+                {scannedLine && (
+                  <div className="mt-2 rounded border border-blue-300 bg-white p-2 text-sm">
+                    <span className="font-mono font-semibold">{scannedLine.sku}</span>
+                    {scannedLine.product_name && <span className="ml-2 text-gray-500">{scannedLine.product_name}</span>}
+                    <span className="ml-2 text-xs text-gray-400">Ordered: {scannedLine.qty_ordered} / Packed: {scannedLine.qty_packed} / Balance: {scannedLine.balance}</span>
+                  </div>
+                )}
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">④ Remarks</label>
-                <input
-                  value={newBoxRemarks}
-                  onChange={(e) => setNewBoxRemarks(e.target.value)}
-                  placeholder="선택사항"
-                  className="w-full rounded border px-3 py-2 text-sm"
-                />
+            {/* ── 키인 영역 ── */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
+              <div className="text-xs font-bold text-amber-700 uppercase tracking-wide">Key-in</div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">④ Qty</label>
+                  <input
+                    type="number" min={1} value={qty}
+                    onChange={(e) => setQty(Number(e.target.value || 0))}
+                    className="w-full rounded border px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">⑤ Weight (kg)</label>
+                  <input
+                    value={newBoxWeightKg}
+                    onChange={(e) => setNewBoxWeightKg(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded border px-3 py-2 text-sm"
+                    type="number"
+                  />
+                </div>
               </div>
+            </div>
+
+            {/* ── 액션 영역 ── */}
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  // 1. Create Box (없으면)
+                  if (newBoxNo.trim() && !boxes.find(b => b.box_no === newBoxNo.trim())) {
+                    await handleCreateBox();
+                  }
+                  // 2. Add Item
+                  if (sku.trim() && qty > 0 && selectedBoxId) {
+                    await handleAddItem();
+                  }
+                }}
+                disabled={savingBox || savingItem || isShipped || (!newBoxNo.trim() && !selectedBoxId)}
+                className="flex-1 rounded bg-black px-3 py-2 text-sm text-white hover:bg-gray-800 disabled:opacity-40"
+              >
+                {savingBox || savingItem ? "Saving..." : "⑥ Save (Create Box + Add Item)"}
+              </button>
 
               <button
-                onClick={handleCreateBox}
-                disabled={savingBox || isShipped}
-                className="w-full rounded bg-black px-3 py-2 text-sm text-white hover:bg-gray-800 disabled:opacity-40"
+                onClick={handlePrintLabel}
+                disabled={!selectedBox}
+                className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
               >
-                {savingBox ? "Creating..." : "⑤ Create Box"}
+                ⑦ Print Label
               </button>
             </div>
           </div>
 
-          <div className="rounded-xl border p-4 space-y-3">
-            <div>
-              <h2 className="text-lg font-semibold">Add Item to Box</h2>
-              <p className="text-sm text-gray-500">
-                바코드 스캔 → Qty 입력 → Add Item (반복). 완료 후 Print Label.
-              </p>
-            </div>
-
-            {/* 선택된 박스 표시 (Box Summary 클릭 또는 Create Box 후 자동 선택) */}
-            <div className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${
-              selectedBox
-                ? (selectedBox.status || "").toUpperCase() === "OPEN"
-                  ? "border-green-300 bg-green-50"
-                  : "border-gray-200 bg-gray-50"
-                : "border-dashed border-gray-300 bg-gray-50"
-            }`}>
-              {selectedBox ? (
-                <>
-                  <div>
-                    <span className="font-semibold">{selectedBox.box_no}</span>
-                    <span className={`ml-2 text-xs px-1.5 py-0.5 rounded border font-medium ${
-                      (selectedBox.status || "").toUpperCase() === "OPEN"
-                        ? "bg-green-100 text-green-700 border-green-200"
-                        : "bg-gray-100 text-gray-500 border-gray-200"
-                    }`}>
-                      {selectedBox.status}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-400">
-                    {boxItemCount(selectedBox.items)} items / {sumBoxQty(selectedBox.items)} qty
-                  </span>
-                </>
-              ) : (
-                <span className="text-gray-400">오른쪽 박스 목록에서 박스를 선택하세요</span>
-              )}
-            </div>
-
-            {/* Barcode scan input */}
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-500">
-                SKU / Barcode 스캔
-              </label>
-              <div className="flex gap-2">
-                <input
-                  ref={barcodeRef}
-                  type="text"
-                  value={barcodeInput}
-                  onChange={(e) => {
-                    setBarcodeInput(e.target.value);
-                    setScanError("");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleBarcodeSearch();
-                    }
-                  }}
-                  placeholder="바코드 스캔 또는 SKU 입력 후 Enter"
-                  className="flex-1 rounded border px-3 py-2 text-sm font-mono"
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  onClick={handleBarcodeSearch}
-                  className="rounded border px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100"
-                >
-                  조회
-                </button>
-              </div>
-
-              {/* Scan error */}
-              {scanError && (
-                <div className="text-xs text-red-600 px-1">{scanError}</div>
-              )}
-            </div>
-
-            {/* Scanned SKU info card */}
-            {scannedLine ? (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="font-semibold text-sm font-mono">{scannedLine.sku}</div>
-                    {scannedLine.product_name && (
-                      <div className="text-xs text-gray-600 mt-0.5">{scannedLine.product_name}</div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setScannedLine(null); setSku(""); setBarcodeInput(""); setScanError(""); barcodeRef.current?.focus(); }}
-                    className="text-xs text-gray-400 hover:text-gray-600"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded bg-white border px-2 py-1.5">
-                    <div className="text-xs text-gray-400">Ordered</div>
-                    <div className="font-semibold text-sm">{scannedLine.qty_ordered}</div>
-                  </div>
-                  <div className="rounded bg-white border px-2 py-1.5">
-                    <div className="text-xs text-gray-400">Packed</div>
-                    <div className="font-semibold text-sm">{scannedLine.qty_packed}</div>
-                  </div>
-                  <div className={`rounded border px-2 py-1.5 ${
-                    scannedLine.balance > 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"
-                  }`}>
-                    <div className="text-xs text-gray-400">Balance</div>
-                    <div className={`font-semibold text-sm ${
-                      scannedLine.balance > 0 ? "text-amber-700" : "text-green-700"
-                    }`}>{scannedLine.balance}</div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-center text-xs text-gray-400">
-                바코드를 스캔하면 SKU 정보가 표시됩니다
-              </div>
-            )}
-
-            {/* Qty input */}
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-500">Qty</label>
-              <input
-                type="number"
-                min={1}
-                value={qty}
-                onChange={(e) => setQty(Number(e.target.value || 0))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && scannedLine && selectedBox) {
-                    e.preventDefault();
-                    handleAddItem();
-                  }
-                }}
-                className="w-full rounded border px-3 py-2 text-sm"
-              />
-            </div>
-
-            <button
-              onClick={handleAddItem}
-              disabled={
-                savingItem ||
-                isShipped ||
-                !selectedBox ||
-                (selectedBox.status || "").toUpperCase() !== "OPEN" ||
-                !scannedLine
-              }
-              className="w-full rounded border px-3 py-2 text-sm bg-black text-white hover:bg-gray-800 disabled:opacity-40 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
-            >
-              {savingItem ? "Saving..." : "Add Item"}
-            </button>
-          </div>
-
+          {/* DN Lines */}
           <div className="rounded-xl border p-4 space-y-3">
             <div>
               <h2 className="text-lg font-semibold">DN Lines</h2>
