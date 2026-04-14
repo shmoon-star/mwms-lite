@@ -69,6 +69,8 @@ export default function PackingListNewClient({ initialPoNo = "" }: { initialPoNo
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [poLines, setPoLines] = useState<{ id: string; sku: string; qty_ordered: number }[]>([]);
+  const [loadingLines, setLoadingLines] = useState(false);
 
   const selectedPo = useMemo(() => {
     return poOptions.find((row) => row.po_no === selectedPoNo) ?? null;
@@ -134,6 +136,17 @@ export default function PackingListNewClient({ initialPoNo = "" }: { initialPoNo
   useEffect(() => {
     loadPoOptions();
   }, []);
+
+  // PO 선택 시 라인 자동 로드
+  useEffect(() => {
+    if (!selectedPoNo) { setPoLines([]); return; }
+    setLoadingLines(true);
+    fetch(`/api/vendor/po-options/${encodeURIComponent(selectedPoNo)}`, { cache: "no-store" })
+      .then(r => r.json())
+      .then(json => { if (json.ok) setPoLines(json.lines ?? []); })
+      .catch(() => {})
+      .finally(() => setLoadingLines(false));
+  }, [selectedPoNo]);
 
   async function handlePreview() {
     try {
@@ -368,6 +381,61 @@ export default function PackingListNewClient({ initialPoNo = "" }: { initialPoNo
           </div>
         )}
       </div>
+
+      {/* PO Lines (SKU별 수량) */}
+      {selectedPo && poLines.length > 0 && (
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 0, background: "#fff" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>PO Lines ({poLines.length})</div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>해당 PO의 SKU별 발주 수량입니다. CSV 템플릿에 맞춰 패킹리스트를 작성해주세요.</div>
+            </div>
+            <button
+              onClick={() => {
+                const csv = "\uFEFF" + ["sku,qty_ordered", ...poLines.map(l => `${l.sku},${l.qty_ordered}`)].join("\n");
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${selectedPoNo}_lines.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              style={{ padding: "6px 14px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", background: "#fff" }}
+            >
+              CSV
+            </button>
+          </div>
+          {loadingLines ? (
+            <div style={{ padding: 20, textAlign: "center", color: "#9ca3af" }}>Loading...</div>
+          ) : (
+            <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead style={{ position: "sticky", top: 0, background: "#f3f4f6" }}>
+                  <tr>
+                    <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 700, fontSize: 12 }}>#</th>
+                    <th style={{ padding: "8px 12px", textAlign: "left", fontWeight: 700, fontSize: 12 }}>SKU</th>
+                    <th style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, fontSize: 12 }}>Ordered Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {poLines.map((line, idx) => (
+                    <tr key={line.id} style={{ borderTop: "1px solid #f0f0f0" }}>
+                      <td style={{ padding: "6px 12px", color: "#9ca3af" }}>{idx + 1}</td>
+                      <td style={{ padding: "6px 12px", fontWeight: 600, fontFamily: "monospace" }}>{line.sku}</td>
+                      <td style={{ padding: "6px 12px", textAlign: "right", fontWeight: 600 }}>{line.qty_ordered.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: "2px solid #111", fontWeight: 700 }}>
+                    <td style={{ padding: "8px 12px" }} colSpan={2}>합계</td>
+                    <td style={{ padding: "8px 12px", textAlign: "right" }}>{poLines.reduce((s, l) => s + l.qty_ordered, 0).toLocaleString()}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <div
         style={{
