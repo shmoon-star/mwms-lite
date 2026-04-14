@@ -200,11 +200,8 @@ export default function WmsDnDetailPage({
 
       if (createdBoxId) {
         setSelectedBoxId(createdBoxId);
-        // 생성 후 자동 Print Label
-        setTimeout(() => {
-          const createdBox = document.querySelector('[data-print-label]') as HTMLButtonElement;
-          if (createdBox) createdBox.click();
-        }, 300);
+        // 박스 생성 후 바코드 입력에 포커스 (아이템 추가 준비)
+        setTimeout(() => barcodeRef.current?.focus(), 100);
       }
     } catch (e: any) {
       alert(e?.message || "Failed to create box");
@@ -564,7 +561,7 @@ export default function WmsDnDetailPage({
             <div>
               <h2 className="text-lg font-semibold">Create Box</h2>
               <p className="text-sm text-gray-500">
-                박스번호를 생성한 뒤 SKU / Qty를 적재합니다.
+                박스 껍데기를 먼저 생성합니다. 아이템은 아래에서 추가합니다.
               </p>
             </div>
 
@@ -616,7 +613,7 @@ export default function WmsDnDetailPage({
                 disabled={savingBox || isShipped}
                 className="w-full rounded bg-black px-3 py-2 text-sm text-white hover:bg-gray-800 disabled:opacity-40"
               >
-                {savingBox ? "Creating..." : "⑤ Create Box + Print"}
+                {savingBox ? "Creating..." : "⑤ Create Box"}
               </button>
             </div>
           </div>
@@ -625,7 +622,7 @@ export default function WmsDnDetailPage({
             <div>
               <h2 className="text-lg font-semibold">Add Item to Box</h2>
               <p className="text-sm text-gray-500">
-                선택한 OPEN 박스에 바코드 스캔 후 Qty를 입력합니다.
+                바코드 스캔 → Qty 입력 → Add Item (반복). 완료 후 Print Label.
               </p>
             </div>
 
