@@ -424,10 +424,13 @@ export default function WmsDnDetailPage({
 </style>
 </head>
 <body>
+  <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #ccc;padding-bottom:4px;margin-bottom:4px;font-size:11px;">
+    <div><b>DN: ${header.dn_no}</b></div>
+    <div>${barcodeSvg(header.dn_no, 24, 1)}<div style="font-size:8px;text-align:center">${header.dn_no}</div></div>
+  </div>
   <div class="header">
     <div>
       <div class="box-label">Box: ${selectedBox.box_no}</div>
-      <div style="font-size:11px;color:#666">DN: ${header.dn_no}</div>
     </div>
     <div class="barcode-area">
       ${boxBarcode}
@@ -566,46 +569,54 @@ export default function WmsDnDetailPage({
             </div>
 
             <div className="grid grid-cols-1 gap-3">
-              <input
-                value={newBoxNo}
-                onChange={(e) => setNewBoxNo(e.target.value)}
-                placeholder="Box No"
-                className="rounded border px-3 py-2 text-sm"
-              />
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">① Box No *</label>
+                <input
+                  value={newBoxNo}
+                  onChange={(e) => setNewBoxNo(e.target.value)}
+                  placeholder="Box No 스캔 또는 입력"
+                  className="w-full rounded border px-3 py-2 text-sm font-mono"
+                />
+              </div>
 
-              <select
-                value={newBoxType}
-                onChange={(e) => setNewBoxType(e.target.value)}
-                className="rounded border px-3 py-2 text-sm"
-              >
-                <option value="">Select Box Type</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-              </select>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">② Box Type (1~5)</label>
+                <input
+                  value={newBoxType}
+                  onChange={(e) => setNewBoxType(e.target.value)}
+                  placeholder="1, 2, 3, 4, 5"
+                  className="w-full rounded border px-3 py-2 text-sm font-mono"
+                  maxLength={1}
+                />
+              </div>
 
-              <input
-                value={newBoxWeightKg}
-                onChange={(e) => setNewBoxWeightKg(e.target.value)}
-                placeholder="Weight (kg)"
-                className="rounded border px-3 py-2 text-sm"
-              />
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">③ Weight (kg)</label>
+                <input
+                  value={newBoxWeightKg}
+                  onChange={(e) => setNewBoxWeightKg(e.target.value)}
+                  placeholder="0"
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  type="number"
+                />
+              </div>
 
-              <input
-                value={newBoxRemarks}
-                onChange={(e) => setNewBoxRemarks(e.target.value)}
-                placeholder="Remarks"
-                className="rounded border px-3 py-2 text-sm"
-              />
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">④ Remarks</label>
+                <input
+                  value={newBoxRemarks}
+                  onChange={(e) => setNewBoxRemarks(e.target.value)}
+                  placeholder="선택사항"
+                  className="w-full rounded border px-3 py-2 text-sm"
+                />
+              </div>
 
               <button
                 onClick={handleCreateBox}
                 disabled={savingBox || isShipped}
-                className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+                className="w-full rounded bg-black px-3 py-2 text-sm text-white hover:bg-gray-800 disabled:opacity-40"
               >
-                {savingBox ? "Creating..." : "Create Box + Print"}
+                {savingBox ? "Creating..." : "⑤ Create Box + Print"}
               </button>
             </div>
           </div>
@@ -618,32 +629,7 @@ export default function WmsDnDetailPage({
               </p>
             </div>
 
-            {/* Box 선택: 바코드 입력 또는 Box Summary 클릭 */}
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-gray-500">Box No 입력 / 스캔</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Box No 스캔 또는 입력 후 Enter"
-                  className="flex-1 rounded border px-3 py-2 text-sm font-mono"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      const val = (e.target as HTMLInputElement).value.trim();
-                      if (!val) return;
-                      const found = boxes.find(b => b.box_no === val);
-                      if (found) {
-                        setSelectedBoxId(found.id);
-                        (e.target as HTMLInputElement).value = "";
-                      } else {
-                        alert(`Box "${val}" not found`);
-                      }
-                    }
-                  }}
-                />
-              </div>
-            </div>
-
+            {/* 선택된 박스 표시 (Box Summary 클릭 또는 Create Box 후 자동 선택) */}
             <div className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${
               selectedBox
                 ? (selectedBox.status || "").toUpperCase() === "OPEN"
