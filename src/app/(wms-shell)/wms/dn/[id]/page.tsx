@@ -272,11 +272,13 @@ export default function WmsDnDetailPage({
     }
   }
 
-  async function handleCloseBox(boxId: string) {
+  async function handleCloseBox(boxId: string, skipConfirm = false) {
     if (!id) return;
 
-    const ok = confirm("이 박스를 마감할까요?");
-    if (!ok) return;
+    if (!skipConfirm) {
+      const ok = confirm("이 박스를 마감할까요?");
+      if (!ok) return;
+    }
 
     try {
       const res = await fetch(`/api/wms/dn/${id}/box`, {
@@ -617,30 +619,40 @@ export default function WmsDnDetailPage({
             </div>
 
             {/* ── 키인 영역 ── */}
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
-              <div className="text-xs font-bold text-amber-700 uppercase tracking-wide">Key-in</div>
+            {(() => {
+              // Weight는 첫 번째 아이템 추가 시에만 표시 (박스 단위 Weight)
+              const existingBox = boxes.find(b => b.box_no === newBoxNo.trim());
+              const boxHasItems = existingBox ? existingBox.items.length > 0 : (selectedBox ? selectedBox.items.length > 0 : false);
+              const showWeight = !boxHasItems;
+              return (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
+                  <div className="text-xs font-bold text-amber-700 uppercase tracking-wide">Key-in</div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">④ Qty</label>
-                  <input
-                    type="number" min={1} value={qty}
-                    onChange={(e) => setQty(Number(e.target.value || 0))}
-                    className="w-full rounded border px-3 py-2 text-sm"
-                  />
+                  <div className={showWeight ? "grid grid-cols-2 gap-3" : ""}>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">④ Qty</label>
+                      <input
+                        type="number" min={1} value={qty}
+                        onChange={(e) => setQty(Number(e.target.value || 0))}
+                        className="w-full rounded border px-3 py-2 text-sm"
+                      />
+                    </div>
+                    {showWeight && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">⑤ Weight (kg)</label>
+                        <input
+                          value={newBoxWeightKg}
+                          onChange={(e) => setNewBoxWeightKg(e.target.value)}
+                          placeholder="0"
+                          className="w-full rounded border px-3 py-2 text-sm"
+                          type="number"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">⑤ Weight (kg)</label>
-                  <input
-                    value={newBoxWeightKg}
-                    onChange={(e) => setNewBoxWeightKg(e.target.value)}
-                    placeholder="0"
-                    className="w-full rounded border px-3 py-2 text-sm"
-                    type="number"
-                  />
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* ── 액션 영역 ── */}
             <div className="flex gap-2">
@@ -658,15 +670,25 @@ export default function WmsDnDetailPage({
                 disabled={savingBox || savingItem || isShipped || (!newBoxNo.trim() && !selectedBoxId)}
                 className="flex-1 rounded bg-black px-3 py-2 text-sm text-white hover:bg-gray-800 disabled:opacity-40"
               >
-                {savingBox || savingItem ? "Saving..." : "⑥ Save (Create Box + Add Item)"}
+                {savingBox || savingItem
+                  ? "Saving..."
+                  : newBoxNo.trim() && !boxes.find(b => b.box_no === newBoxNo.trim())
+                    ? "⑥ Save (Create Box + Add Item)"
+                    : "⑥ Save (Add Item)"}
               </button>
 
               <button
-                onClick={handlePrintLabel}
+                onClick={async () => {
+                  await handlePrintLabel();
+                  // Print 후 자동 Close Box (confirm 없이)
+                  if (selectedBox && (selectedBox.status || "").toUpperCase() === "OPEN" && selectedBox.items.length > 0) {
+                    await handleCloseBox(selectedBox.id, true);
+                  }
+                }}
                 disabled={!selectedBox}
                 className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
               >
-                ⑦ Print Label
+                ⑦ Print Label + Close Box
               </button>
             </div>
           </div>
@@ -795,40 +817,20 @@ export default function WmsDnDetailPage({
               <div className="text-sm text-gray-500">박스를 선택하세요.</div>
             ) : (
               <div className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-lg font-semibold">{selectedBox.box_no}</div>
-                    <div className="text-sm text-gray-500">
-                      Status: {selectedBox.status || "-"} / Packed At: {fmtDateYmd(selectedBox.packed_at) || "-"}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      Type: {selectedBox.box_type || "-"} / Weight:{" "}
-                      {selectedBox.box_weight_kg != null ? `${selectedBox.box_weight_kg} kg` : "-"}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      Remarks: {selectedBox.remarks || "-"}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      Item Count: {boxItemCount(selectedBox.items)} / Packed Qty: {sumBoxQty(selectedBox.items)}
-                    </div>
+                <div>
+                  <div className="text-lg font-semibold">{selectedBox.box_no}</div>
+                  <div className="text-sm text-gray-500">
+                    Status: {selectedBox.status || "-"} / Packed At: {fmtDateYmd(selectedBox.packed_at) || "-"}
                   </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      data-print-label="true"
-                      onClick={handlePrintLabel}
-                      className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
-                    >
-                      🏷️ Print Label
-                    </button>
-                    {(selectedBox.status || "").toUpperCase() === "OPEN" && !isShipped && (
-                      <button
-                        onClick={() => handleCloseBox(selectedBox.id)}
-                        className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
-                      >
-                        Close Box
-                      </button>
-                    )}
+                  <div className="text-sm text-gray-500">
+                    Type: {selectedBox.box_type || "-"} / Weight:{" "}
+                    {selectedBox.box_weight_kg != null ? `${selectedBox.box_weight_kg} kg` : "-"}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    Remarks: {selectedBox.remarks || "-"}
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    Item Count: {boxItemCount(selectedBox.items)} / Packed Qty: {sumBoxQty(selectedBox.items)}
                   </div>
                 </div>
 
