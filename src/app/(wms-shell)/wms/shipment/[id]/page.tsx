@@ -654,20 +654,6 @@ export default function WmsShipmentDetailPage({
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => savePallet(false)}
-                  disabled={
-                    savingPallet ||
-                    closingPallet ||
-                    cancellingPallet ||
-                    String(selectedPallet.status || "").toUpperCase() ===
-                      "CANCELLED"
-                  }
-                  className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
-                >
-                  {savingPallet ? "Saving..." : "Save Dimension"}
-                </button>
-
-                <button
                   onClick={() => savePallet(true)}
                   disabled={
                     savingPallet ||
