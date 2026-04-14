@@ -298,6 +298,23 @@ export default function WmsDnDetailPage({
     }
   }
 
+  const [savingDn, setSavingDn] = useState(false);
+
+  async function handleSavePacking() {
+    if (!id) return;
+    setSavingDn(true);
+    try {
+      const res = await fetch(`/api/wms/dn/${id}/save-packing`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Failed");
+      await load(id);
+    } catch (e: any) {
+      alert(e?.message || "Failed to save");
+    } finally {
+      setSavingDn(false);
+    }
+  }
+
   async function handleConfirm() {
     if (!id) return;
 
@@ -491,6 +508,14 @@ export default function WmsDnDetailPage({
             className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
           >
             Refresh
+          </button>
+
+          <button
+            onClick={handleSavePacking}
+            disabled={savingDn || isShipped}
+            className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {savingDn ? "Saving..." : "Save (PACKING)"}
           </button>
 
           <button
