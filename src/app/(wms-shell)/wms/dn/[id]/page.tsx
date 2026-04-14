@@ -189,6 +189,8 @@ export default function WmsDnDetailPage({
         throw new Error(json?.error || "Failed to create box");
       }
 
+      const createdBoxId = json.box?.id;
+
       setNewBoxNo("");
       setNewBoxRemarks("");
       setNewBoxType("");
@@ -196,10 +198,13 @@ export default function WmsDnDetailPage({
 
       await load(id);
 
-      if (json.box?.id) {
-        setSelectedBoxId(json.box.id);
-        // Auto-focus barcode input after box is created
-        setTimeout(() => barcodeRef.current?.focus(), 100);
+      if (createdBoxId) {
+        setSelectedBoxId(createdBoxId);
+        // 생성 후 자동 Print Label
+        setTimeout(() => {
+          const createdBox = document.querySelector('[data-print-label]') as HTMLButtonElement;
+          if (createdBox) createdBox.click();
+        }, 300);
       }
     } catch (e: any) {
       alert(e?.message || "Failed to create box");
@@ -600,7 +605,7 @@ export default function WmsDnDetailPage({
                 disabled={savingBox || isShipped}
                 className="rounded border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
               >
-                {savingBox ? "Creating..." : "Create Box"}
+                {savingBox ? "Creating..." : "Create Box + Print"}
               </button>
             </div>
           </div>
@@ -613,7 +618,32 @@ export default function WmsDnDetailPage({
               </p>
             </div>
 
-            {/* Selected Box — read-only display, changed by clicking Box Summary */}
+            {/* Box 선택: 바코드 입력 또는 Box Summary 클릭 */}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-gray-500">Box No 입력 / 스캔</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Box No 스캔 또는 입력 후 Enter"
+                  className="flex-1 rounded border px-3 py-2 text-sm font-mono"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const val = (e.target as HTMLInputElement).value.trim();
+                      if (!val) return;
+                      const found = boxes.find(b => b.box_no === val);
+                      if (found) {
+                        setSelectedBoxId(found.id);
+                        (e.target as HTMLInputElement).value = "";
+                      } else {
+                        alert(`Box "${val}" not found`);
+                      }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
             <div className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${
               selectedBox
                 ? (selectedBox.status || "").toUpperCase() === "OPEN"
@@ -900,6 +930,7 @@ export default function WmsDnDetailPage({
 
                   <div className="flex gap-2">
                     <button
+                      data-print-label="true"
                       onClick={handlePrintLabel}
                       className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
                     >
