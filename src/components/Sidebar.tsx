@@ -41,6 +41,8 @@ const groups = [
       { href: "/monitor/analytics", label: "Analytics", sub: "성과 시각화" },
       { href: "/monitor/buyer-trend", label: "Buyer Trend", sub: "바이어별 입출고" },
       { href: "/monitor/settlement", label: "Settlement", sub: "월정산" },
+      { href: "/monitor/history", label: "History", sub: "과거 데이터 통계" },
+      { href: "/monitor/export-dashboard", label: "Export Dashboard", sub: "수출 원장 (Google Sheets 연동)" },
       { href: "/dashboard", label: "Upcoming", sub: "60일 일정 한눈에" },
     ],
   },
