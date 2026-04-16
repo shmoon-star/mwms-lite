@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readSheet, rowsToObjects } from "@/lib/google-sheets";
 import { mapExportRow } from "@/lib/export-raw-mapper";
-import { masterRowsToObjects, mapProductMasterRow } from "@/lib/product-master-mapper";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -102,42 +101,13 @@ export async function GET(req: NextRequest) {
       log.rows_upserted += chunk.length;
     }
 
-    // 5. 상품 master 시트 동기화 (추가)
-    const masterSheetName = process.env.PRODUCT_MASTER_SHEET_NAME || "상품 master 시트의 사본";
-    const masterLog = { rows_read: 0, rows_upserted: 0 };
-    try {
-      const masterRows = await readSheet(sheetId, masterSheetName);
-      const masterObjects = masterRowsToObjects(masterRows);
-      masterLog.rows_read = masterObjects.length;
-
-      const masterMapped = masterObjects
-        .map((obj, i) => {
-          // 브랜드명 없는 row는 건너뜀
-          if (!obj["브랜드명"]) return null;
-          return mapProductMasterRow(obj, i + 7); // data starts at row 7 (1-indexed)
-        })
-        .filter(Boolean) as any[];
-
-      for (let i = 0; i < masterMapped.length; i += CHUNK) {
-        const chunk = masterMapped.slice(i, i + CHUNK);
-        const { error } = await sb
-          .from("history_product_master")
-          .upsert(chunk, { onConflict: "row_key" });
-        if (error) throw new Error(`Master UPSERT 실패: ${error.message}`);
-        masterLog.rows_upserted += chunk.length;
-      }
-    } catch (masterErr: any) {
-      // Master sync 실패해도 Export sync는 성공으로 유지
-      console.error("Master sync failed:", masterErr?.message);
-    }
-
-    // 6. 로그 업데이트 (성공)
+    // 5. 로그 업데이트 (성공)
     if (logRow?.id) {
       await sb
         .from("history_sync_log")
         .update({
-          rows_read: log.rows_read + masterLog.rows_read,
-          rows_upserted: log.rows_upserted + masterLog.rows_upserted,
+          rows_read: log.rows_read,
+          rows_upserted: log.rows_upserted,
           rows_skipped: log.rows_skipped,
           status: "success",
           finished_at: new Date().toISOString(),
@@ -145,7 +115,7 @@ export async function GET(req: NextRequest) {
         .eq("id", logRow.id);
     }
 
-    return NextResponse.json({ ok: true, log: { ...log, master: masterLog } });
+    return NextResponse.json({ ok: true, log });
   } catch (e: any) {
     const errorMsg = e?.message || "Sync failed";
 

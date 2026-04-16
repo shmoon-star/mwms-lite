@@ -144,139 +144,6 @@ export async function GET(req: NextRequest) {
       },
     };
 
-    // === 상품 master 기반 피벗: 물류 현황 × 브랜드 ===
-    // Supabase 기본 1000 row 제한 우회 — 페이지네이션
-    const masterData: any[] = [];
-    let masterPage = 0;
-    const MASTER_PAGE_SIZE = 1000;
-    while (true) {
-      const { data: chunk, error } = await sb
-        .from("history_product_master")
-        .select("brand_name, logistics_status, total_order_qty")
-        .range(masterPage * MASTER_PAGE_SIZE, (masterPage + 1) * MASTER_PAGE_SIZE - 1);
-      if (error) throw error;
-      if (!chunk || chunk.length === 0) break;
-      masterData.push(...chunk);
-      if (chunk.length < MASTER_PAGE_SIZE) break;
-      masterPage++;
-      if (masterPage > 20) break; // safety
-    }
-
-    // 물류 현황 목록 — "입고 전", "행택 부착"만 (선적 완료는 수출 raw에서 추적)
-    // Master에는 25fw + 26ss가 섞여있어 선적 완료는 혼동 방지를 위해 제외
-    const RELEVANT_STATUSES = ["0. 입고 전", "4. 행택 부착 완료"];
-    const logisticsList = RELEVANT_STATUSES;
-
-    // 브랜드 × 물류 현황 매트릭스 (RELEVANT_STATUSES만)
-    const brandLogisticsMap = new Map<string, Record<string, number>>();
-    for (const m of masterData) {
-      if (!m.brand_name) continue;
-      const status = m.logistics_status;
-      if (!status || !RELEVANT_STATUSES.includes(status)) continue; // 입고 전 / 행택 부착만
-      if (!brandLogisticsMap.has(m.brand_name)) {
-        brandLogisticsMap.set(m.brand_name, {});
-      }
-      const row = brandLogisticsMap.get(m.brand_name)!;
-      row[status] = (row[status] || 0) + (m.total_order_qty || 0);
-    }
-
-    const brandLogistics = Array.from(brandLogisticsMap.entries())
-      .map(([brand, counts]) => {
-        const total = RELEVANT_STATUSES.reduce((s, st) => s + (counts[st] || 0), 0);
-        return { brand, ...counts, total };
-      })
-      .filter(b => b.total > 0)
-      .sort((a, b) => b.total - a.total);
-
-    // 물류 현황별 총합 (입고 전 / 행택 부착만)
-    const logisticsSummary: { status: string; qty: number; brand_count: number }[] = [];
-    for (const st of RELEVANT_STATUSES) {
-      let qty = 0;
-      let brandCount = 0;
-      for (const [, counts] of brandLogisticsMap) {
-        if (counts[st]) {
-          qty += counts[st];
-          brandCount += 1;
-        }
-      }
-      logisticsSummary.push({ status: st, qty, brand_count: brandCount });
-    }
-
-    // Master 총합 = 입고 전 + 행택 부착 (선적 완료 제외 — 수출 raw에서 추적)
-    const masterTotal = logisticsSummary.reduce((s, ls) => s + ls.qty, 0);
-
-    // === 카테고리별 스타일/바코드/수량 집계 (전체 master 기준) ===
-    // 전체 master 데이터 별도 로드 (raw_data 포함)
-    const fullMasterData: any[] = [];
-    let fullPage = 0;
-    while (true) {
-      const { data: chunk, error } = await sb
-        .from("history_product_master")
-        .select("style_number, raw_data, total_order_qty")
-        .range(fullPage * MASTER_PAGE_SIZE, (fullPage + 1) * MASTER_PAGE_SIZE - 1);
-      if (error) break;
-      if (!chunk || chunk.length === 0) break;
-      fullMasterData.push(...chunk);
-      if (chunk.length < MASTER_PAGE_SIZE) break;
-      fullPage++;
-      if (fullPage > 20) break;
-    }
-
-    const categoryMap = new Map<string, {
-      category: string;
-      styles: Set<string>;
-      barcodes: Set<string>;
-      qty: number;
-    }>();
-
-    for (const m of fullMasterData) {
-      const cat = (m.raw_data?.["카테고리"] || "미분류").trim();
-      if (!categoryMap.has(cat)) {
-        categoryMap.set(cat, { category: cat, styles: new Set(), barcodes: new Set(), qty: 0 });
-      }
-      const entry = categoryMap.get(cat)!;
-      if (m.style_number) entry.styles.add(m.style_number);
-      const barcode = m.raw_data?.["바코드 번호"];
-      if (barcode) entry.barcodes.add(String(barcode));
-      entry.qty += Number(m.total_order_qty || 0);
-    }
-
-    const categories = Array.from(categoryMap.values())
-      .map(c => ({
-        category: c.category,
-        unique_styles: c.styles.size,
-        unique_barcodes: c.barcodes.size,
-        total_qty: c.qty,
-      }))
-      .sort((a, b) => b.total_qty - a.total_qty);
-
-    // === 상품 샘플 (무신사 UID 있는 상품, 브랜드별 1개씩) ===
-    const productSamples: any[] = [];
-    const seenBrands = new Set<string>();
-    for (const m of fullMasterData) {
-      const uid = m.raw_data?.["무신사 UID * 상품 등록 안 되어 있는 경우 추후 전달"]
-        || m.raw_data?.["무신사 UID"]
-        || m.raw_data?.["무신사\nUID"];
-      const brand = m.raw_data?.["브랜드명"];
-      if (!uid || !brand || seenBrands.has(brand)) continue;
-      const numUid = String(uid).match(/\d+/)?.[0];
-      if (!numUid) continue;
-
-      seenBrands.add(brand);
-      productSamples.push({
-        uid: numUid,
-        brand,
-        style_color_code: m.raw_data?.["스타일넘버 (컬러까지) * 컬러 단위까지 다르게 기입"]
-          || m.raw_data?.["스타일넘버 (컬러까지)"],
-        product_name: m.raw_data?.["상품명 (영문)"] || m.raw_data?.["상품명 (중문) * 컬러명 제외하고 기입"],
-        category: m.raw_data?.["카테고리"],
-        qty: m.total_order_qty || 0,
-        musinsa_url: `https://www.musinsa.com/products/${numUid}`,
-      });
-
-      if (productSamples.length >= 24) break;
-    }
-
     // === 최근 sync 로그 ===
     const { data: logs } = await sb
       .from("history_sync_log")
@@ -291,12 +158,6 @@ export async function GET(req: NextRequest) {
       brands,
       status,
       leadTime,
-      logisticsList,
-      brandLogistics,
-      logisticsSummary,
-      masterTotal,
-      categories,
-      productSamples,
       syncLogs: logs || [],
     });
   } catch (e: any) {
@@ -309,6 +170,3 @@ function avg(arr: number[]): number {
   return Math.round((arr.reduce((s, n) => s + n, 0) / arr.length) * 10) / 10;
 }
 
-function isFiniteNum(n: any): n is number {
-  return typeof n === "number" && isFinite(n);
-}
