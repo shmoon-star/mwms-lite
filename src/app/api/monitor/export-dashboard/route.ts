@@ -1,36 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getCurrentUserProfile } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/monitor/export-dashboard?season=26ss
  *
- * 수출 대시보드 데이터 집계 (admin 전용)
+ * 수출 대시보드 데이터 집계 (public 접근 허용)
+ * 내부 집계 데이터만 노출 — 민감 정보 없음
  */
 export async function GET(req: NextRequest) {
   try {
-    // Auth check: ADMIN 유저만 접근
-    let profile;
-    try {
-      profile = await getCurrentUserProfile();
-    } catch (authErr: any) {
-      console.error("[export-dashboard] Auth error:", authErr?.message);
-      return NextResponse.json(
-        { ok: false, error: `Auth failed: ${authErr?.message || "Unknown"}` },
-        { status: 401 }
-      );
-    }
-    console.log("[export-dashboard] User role:", profile.role, "email:", profile.email);
-    if (profile.role !== "ADMIN") {
-      return NextResponse.json(
-        { ok: false, error: `Forbidden: ADMIN only (current: ${profile.role})` },
-        { status: 403 }
-      );
-    }
-
-    // Admin client로 RLS 우회 (이미 위에서 권한 검증함)
+    // Admin client로 RLS 우회 (public 대시보드)
     const sb = createAdminClient();
     const url = new URL(req.url);
     const season = url.searchParams.get("season") || ""; // '', '26ss', '25fw' or 'all'
