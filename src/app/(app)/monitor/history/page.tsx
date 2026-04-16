@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer,
+  ResponsiveContainer, LabelList,
 } from "recharts";
 
 type Summary = {
@@ -161,12 +161,7 @@ export default function HistoryPage() {
       </div>
 
       {/* Summary Cards — 건수는 unique 문서 번호 기준 (line 수 아님) */}
-      <div className="grid grid-cols-5 gap-3">
-        <div className="rounded-xl border p-4">
-          <div className="text-xs text-gray-500">Total Documents (건)</div>
-          <div className="mt-1 text-2xl font-semibold">{fmtNum(s.total_docs)}</div>
-          <div className="text-[10px] text-gray-400 mt-0.5">총 line: {fmtNum((s as any).total_lines || 0)}</div>
-        </div>
+      <div className="grid grid-cols-4 gap-3">
         <div className="rounded-xl border p-4">
           <div className="text-xs text-gray-500">PO (건 / Qty)</div>
           <div className="mt-1 text-xl font-semibold">{fmtNum(s.po_count)} / {fmtNum(s.total_po_qty)}</div>
@@ -185,22 +180,35 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* 월별 물동량 — PO / DN / SHIPMENT (GR은 PO와 거의 동일하므로 제외) */}
+      {/* 월별 물동량 — PO(입고) vs SHIPMENT(수출) 두 축만 비교 */}
       <div className="rounded-xl border p-4">
         <h2 className="text-lg font-semibold mb-3">월별 물동량 (Qty)</h2>
         <p className="text-xs text-gray-500 mb-2">
-          ℹ️ PO(발주) / DN(출고지시) / SHIPMENT(실 선적) · GR은 PO와 거의 동일하여 제외
+          ℹ️ PO(입고 발주) vs SHIPMENT(실 수출) · DN/GR은 PO와 거의 동일하여 제외
         </p>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data.monthly}>
+        <ResponsiveContainer width="100%" height={340}>
+          <BarChart data={data.monthly} margin={{ top: 24, right: 20, left: 10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="year_month" />
-            <YAxis />
+            <XAxis dataKey="year_month" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} />
             <Tooltip formatter={(v: any) => fmtNum(Number(v))} />
             <Legend />
-            <Bar dataKey="PO" fill="#3b82f6" />
-            <Bar dataKey="DN" fill="#10b981" />
-            <Bar dataKey="SHIPMENT" fill="#f59e0b" />
+            <Bar dataKey="PO" fill="#3b82f6" name="PO (입고)">
+              <LabelList
+                dataKey="PO"
+                position="top"
+                style={{ fontSize: 10, fontWeight: 600, fill: "#1e40af" }}
+                formatter={(v: any) => (v > 0 ? fmtNum(Number(v)) : "")}
+              />
+            </Bar>
+            <Bar dataKey="SHIPMENT" fill="#f59e0b" name="SHIPMENT (수출)">
+              <LabelList
+                dataKey="SHIPMENT"
+                position="top"
+                style={{ fontSize: 10, fontWeight: 600, fill: "#b45309" }}
+                formatter={(v: any) => (v > 0 ? fmtNum(Number(v)) : "")}
+              />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
