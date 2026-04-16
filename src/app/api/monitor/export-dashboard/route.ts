@@ -12,9 +12,22 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     // Auth check: ADMIN 유저만 접근
-    const profile = await getCurrentUserProfile();
+    let profile;
+    try {
+      profile = await getCurrentUserProfile();
+    } catch (authErr: any) {
+      console.error("[export-dashboard] Auth error:", authErr?.message);
+      return NextResponse.json(
+        { ok: false, error: `Auth failed: ${authErr?.message || "Unknown"}` },
+        { status: 401 }
+      );
+    }
+    console.log("[export-dashboard] User role:", profile.role, "email:", profile.email);
     if (profile.role !== "ADMIN") {
-      return NextResponse.json({ ok: false, error: "Forbidden: ADMIN only" }, { status: 403 });
+      return NextResponse.json(
+        { ok: false, error: `Forbidden: ADMIN only (current: ${profile.role})` },
+        { status: 403 }
+      );
     }
 
     // Admin client로 RLS 우회 (이미 위에서 권한 검증함)
