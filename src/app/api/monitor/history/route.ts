@@ -12,20 +12,44 @@ export async function GET() {
   try {
     const sb = await createClient();
 
-    const { data: docs, error: docErr } = await sb
-      .from("history_document")
-      .select("*")
-      .order("doc_date", { ascending: true });
-    if (docErr) throw docErr;
+    // Supabase 기본 1000행 제한 우회 — 페이지네이션으로 전체 조회
+    const PAGE_SIZE = 1000;
 
-    const { data: settles, error: stErr } = await sb
-      .from("history_settlement")
-      .select("*")
-      .order("year_month", { ascending: true });
-    if (stErr) throw stErr;
+    const documents: any[] = [];
+    {
+      let page = 0;
+      while (true) {
+        const { data, error } = await sb
+          .from("history_document")
+          .select("*")
+          .order("doc_date", { ascending: true })
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        documents.push(...data);
+        if (data.length < PAGE_SIZE) break;
+        page += 1;
+        if (page > 100) break; // safety: 최대 100,000행
+      }
+    }
 
-    const documents = docs ?? [];
-    const settlements = settles ?? [];
+    const settlements: any[] = [];
+    {
+      let page = 0;
+      while (true) {
+        const { data, error } = await sb
+          .from("history_settlement")
+          .select("*")
+          .order("year_month", { ascending: true })
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        settlements.push(...data);
+        if (data.length < PAGE_SIZE) break;
+        page += 1;
+        if (page > 50) break; // safety: 최대 50,000행
+      }
+    }
 
     // === Summary ===
     const summary = {
