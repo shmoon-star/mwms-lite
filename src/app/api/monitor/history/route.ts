@@ -52,12 +52,28 @@ export async function GET() {
     }
 
     // === Summary ===
+    // "건수"는 unique doc_no(문서 번호) 기준으로 카운트 (line 수가 아님)
+    const uniqueDocsByType = (type: string): Set<string> => {
+      const set = new Set<string>();
+      for (const d of documents) {
+        if (d.doc_type !== type) continue;
+        if (d.doc_no) set.add(String(d.doc_no));
+      }
+      return set;
+    };
+
+    const poDocs = uniqueDocsByType("PO");
+    const dnDocs = uniqueDocsByType("DN");
+    const shipmentDocs = uniqueDocsByType("SHIPMENT");
+    const grDocs = uniqueDocsByType("GR");
+
     const summary = {
-      total_docs: documents.length,
-      po_count: documents.filter(d => d.doc_type === "PO").length,
-      dn_count: documents.filter(d => d.doc_type === "DN").length,
-      shipment_count: documents.filter(d => d.doc_type === "SHIPMENT").length,
-      gr_count: documents.filter(d => d.doc_type === "GR").length,
+      total_docs: poDocs.size + dnDocs.size + shipmentDocs.size + grDocs.size,
+      total_lines: documents.length, // 참고용 (총 row 수)
+      po_count: poDocs.size,
+      dn_count: dnDocs.size,
+      shipment_count: shipmentDocs.size,
+      gr_count: grDocs.size,
       total_po_qty: documents.filter(d => d.doc_type === "PO").reduce((s, d) => s + (d.qty || 0), 0),
       total_dn_qty: documents.filter(d => d.doc_type === "DN").reduce((s, d) => s + (d.qty || 0), 0),
       total_shipment_qty: documents.filter(d => d.doc_type === "SHIPMENT").reduce((s, d) => s + (d.qty || 0), 0),
@@ -97,11 +113,22 @@ export async function GET() {
       m.set(ym, (m.get(ym) || 0) + Number(d.qty || 0));
     }
     const allMonths = Array.from(new Set(monthly.map(m => m.year_month))).sort();
-    const buyerMonthly = Array.from(buyerMonthlyMap.entries()).map(([buyer, m]) => {
-      const row: any = { buyer_code: buyer };
-      for (const ym of allMonths) row[ym] = m.get(ym) || 0;
-      return row;
-    });
+    // Top 20 바이어만 (총 출고량 기준)
+    const buyerMonthly = Array.from(buyerMonthlyMap.entries())
+      .map(([buyer, m]) => {
+        const row: any = { buyer_code: buyer };
+        let total = 0;
+        for (const ym of allMonths) {
+          const v = m.get(ym) || 0;
+          row[ym] = v;
+          total += v;
+        }
+        row._total = total;
+        return row;
+      })
+      .sort((a, b) => b._total - a._total)
+      .slice(0, 20);
+    const buyerCountTotal = buyerMonthlyMap.size;
 
     // === 벤더별 월별 입고량 (GR 기준, 없으면 PO) ===
     const vendorMonthlyMap = new Map<string, Map<string, number>>();
@@ -148,6 +175,7 @@ export async function GET() {
       summary,
       monthly,
       buyerMonthly,
+      buyerCountTotal,
       vendorMonthly,
       leadTime,
       allocations,

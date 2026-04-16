@@ -38,6 +38,7 @@ type HistoryData = {
   summary: Summary;
   monthly: { year_month: string; PO: number; DN: number; SHIPMENT: number; GR: number }[];
   buyerMonthly: any[];
+  buyerCountTotal: number;
   vendorMonthly: any[];
   leadTime: { year_month: string; avg_days: number }[];
   allocations: Allocation[];
@@ -159,23 +160,24 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Cards — 건수는 unique 문서 번호 기준 (line 수 아님) */}
       <div className="grid grid-cols-5 gap-3">
         <div className="rounded-xl border p-4">
-          <div className="text-xs text-gray-500">Total Documents</div>
+          <div className="text-xs text-gray-500">Total Documents (건)</div>
           <div className="mt-1 text-2xl font-semibold">{fmtNum(s.total_docs)}</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">총 line: {fmtNum((s as any).total_lines || 0)}</div>
         </div>
         <div className="rounded-xl border p-4">
           <div className="text-xs text-gray-500">PO (건 / Qty)</div>
-          <div className="mt-1 text-xl font-semibold">{s.po_count} / {fmtNum(s.total_po_qty)}</div>
+          <div className="mt-1 text-xl font-semibold">{fmtNum(s.po_count)} / {fmtNum(s.total_po_qty)}</div>
         </div>
         <div className="rounded-xl border p-4">
           <div className="text-xs text-gray-500">DN (건 / Qty)</div>
-          <div className="mt-1 text-xl font-semibold">{s.dn_count} / {fmtNum(s.total_dn_qty)}</div>
+          <div className="mt-1 text-xl font-semibold">{fmtNum(s.dn_count)} / {fmtNum(s.total_dn_qty)}</div>
         </div>
         <div className="rounded-xl border p-4">
           <div className="text-xs text-gray-500">Shipment (건 / Qty)</div>
-          <div className="mt-1 text-xl font-semibold">{s.shipment_count} / {fmtNum(s.total_shipment_qty)}</div>
+          <div className="mt-1 text-xl font-semibold">{fmtNum(s.shipment_count)} / {fmtNum(s.total_shipment_qty)}</div>
         </div>
         <div className="rounded-xl border p-4">
           <div className="text-xs text-gray-500">Total Cost</div>
@@ -183,9 +185,12 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* 월별 물동량 */}
+      {/* 월별 물동량 — PO / DN / SHIPMENT (GR은 PO와 거의 동일하므로 제외) */}
       <div className="rounded-xl border p-4">
         <h2 className="text-lg font-semibold mb-3">월별 물동량 (Qty)</h2>
+        <p className="text-xs text-gray-500 mb-2">
+          ℹ️ PO(발주) / DN(출고지시) / SHIPMENT(실 선적) · GR은 PO와 거의 동일하여 제외
+        </p>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={data.monthly}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -196,28 +201,34 @@ export default function HistoryPage() {
             <Bar dataKey="PO" fill="#3b82f6" />
             <Bar dataKey="DN" fill="#10b981" />
             <Bar dataKey="SHIPMENT" fill="#f59e0b" />
-            <Bar dataKey="GR" fill="#8b5cf6" />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* 바이어별 월별 출고 */}
+      {/* 바이어별 월별 출고 — Top 20 */}
       <div className="rounded-xl border p-4">
-        <h2 className="text-lg font-semibold mb-3">바이어별 월별 출고량 (Shipment Qty)</h2>
-        <div className="overflow-x-auto">
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="text-lg font-semibold">바이어별 월별 출고량 (Shipment Qty)</h2>
+          <p className="text-xs text-gray-500">
+            Top 20 (총 출고량 기준) · 전체 {fmtNum(data.buyerCountTotal || 0)}개 바이어 중
+          </p>
+        </div>
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 sticky top-0">
               <tr>
+                <th className="px-3 py-2 text-left w-10">#</th>
                 <th className="px-3 py-2 text-left">Buyer</th>
                 {data.allMonths.map(m => <th key={m} className="px-3 py-2 text-right">{m}</th>)}
                 <th className="px-3 py-2 text-right font-bold">Total</th>
               </tr>
             </thead>
             <tbody>
-              {data.buyerMonthly.map((row: any) => {
-                const total = data.allMonths.reduce((s, m) => s + (row[m] || 0), 0);
+              {data.buyerMonthly.map((row: any, i: number) => {
+                const total = row._total ?? data.allMonths.reduce((s, m) => s + (row[m] || 0), 0);
                 return (
-                  <tr key={row.buyer_code} className="border-t">
+                  <tr key={row.buyer_code} className="border-t hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-400 font-mono">{i + 1}</td>
                     <td className="px-3 py-2 font-medium">{row.buyer_code}</td>
                     {data.allMonths.map(m => (
                       <td key={m} className="px-3 py-2 text-right">{fmtNum(row[m] || 0)}</td>
