@@ -10,7 +10,8 @@ type ApplyRow = {
   email: string;
   display_name: string;
   vendor_code: string;
-  vendor_id: string; // preview에서 해결된 uuid
+  vendor_name: string | null; // 신규 벤더 생성 시 사용
+  vendor_id: string | null; // DB에 존재하는 벤더인 경우 preview에서 전달됨
   password: string;
 };
 
@@ -60,9 +61,10 @@ function isValidEmail(email: string): boolean {
 /**
  * POST /api/admin/users/bulk/apply
  *
- * Preview에서 valid로 분류된 vendor user 행들을 일괄 생성.
- * 각 row는 Supabase Auth + user_profiles + vendor_users 3곳에 기록.
- * 실패한 row는 rollback(auth 삭제) 후 에러 기록. 다른 row는 계속 진행.
+ * Preview에서 valid/valid_new_vendor 행들을 순차 처리.
+ * - 벤더가 없으면 자동 생성
+ * - Supabase Auth + user_profiles + vendor_users 3곳에 기록
+ * - 실패 row는 rollback, 다른 row는 계속 진행
  */
 export async function POST(req: NextRequest) {
   const auth = await getAuthorizedAdmin();
@@ -88,12 +90,12 @@ export async function POST(req: NextRequest) {
     const errors: RowError[] = [];
     const seen = new Set<string>();
 
-    for (let i = 0; i < rawRows.length; i += 1) {
-      const r = rawRows[i];
+    for (const r of rawRows) {
       const email = String(r?.email ?? "").trim().toLowerCase();
       const display_name = String(r?.display_name ?? "").trim();
       const vendor_code = String(r?.vendor_code ?? "").trim();
-      const vendor_id = String(r?.vendor_id ?? "").trim();
+      const vendor_name = r?.vendor_name ? String(r.vendor_name).trim() : null;
+      const vendor_id = r?.vendor_id ? String(r.vendor_id).trim() : null;
       const password = String(r?.password ?? "").trim();
 
       if (!email || !isValidEmail(email)) {
@@ -104,8 +106,15 @@ export async function POST(req: NextRequest) {
         errors.push({ email, reason: "display_name missing" });
         continue;
       }
-      if (!vendor_code || !vendor_id) {
-        errors.push({ email, reason: "vendor info missing" });
+      if (!vendor_code) {
+        errors.push({ email, reason: "vendor_code missing" });
+        continue;
+      }
+      if (!vendor_id && !vendor_name) {
+        errors.push({
+          email,
+          reason: "Cannot resolve vendor: both vendor_id and vendor_name are empty",
+        });
         continue;
       }
       if (!password || password.length < 8) {
@@ -117,7 +126,7 @@ export async function POST(req: NextRequest) {
         continue;
       }
       seen.add(email);
-      cleaned.push({ email, display_name, vendor_code, vendor_id, password });
+      cleaned.push({ email, display_name, vendor_code, vendor_name, vendor_id, password });
     }
 
     if (cleaned.length === 0) {
@@ -127,7 +136,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2차 재검증: DB에 이미 존재하는 email / 존재하지 않는 vendor_id
+    // 2차 재검증: 이미 존재하는 email 제거, 존재하지 않는 vendor_id 제거
     const emails = cleaned.map((r) => r.email);
     const existingEmails = new Set<string>();
     {
@@ -145,33 +154,70 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const vendorIds = Array.from(new Set(cleaned.map((r) => r.vendor_id)));
-    const validVendorIds = new Set<string>();
+    // 기존 벤더 조회 (vendor_code로, 저장소 상태 최신화)
+    const vendorCodes = Array.from(new Set(cleaned.map((r) => r.vendor_code)));
+    const vendorByCode = new Map<string, string>(); // code → id
     {
       const CHUNK = 500;
-      for (let i = 0; i < vendorIds.length; i += CHUNK) {
-        const chunk = vendorIds.slice(i, i + CHUNK);
+      for (let i = 0; i < vendorCodes.length; i += CHUNK) {
+        const chunk = vendorCodes.slice(i, i + CHUNK);
         const { data, error } = await supabase
           .from("vendor")
-          .select("id")
-          .in("id", chunk);
+          .select("id, vendor_code")
+          .in("vendor_code", chunk);
         if (error) throw error;
-        for (const v of data ?? []) validVendorIds.add(v.id);
+        for (const v of data ?? []) vendorByCode.set(String(v.vendor_code), String(v.id));
       }
     }
 
-    // 실제 생성 루프 (순차) — Supabase Auth Admin API는 bulk 미지원
     let inserted = 0;
-    const createdItems: { email: string; vendor_code: string; user_id: string }[] = [];
+    let createdVendors = 0;
+    const createdItems: {
+      email: string;
+      vendor_code: string;
+      user_id: string;
+      vendor_created: boolean;
+    }[] = [];
 
     for (const row of cleaned) {
       if (existingEmails.has(row.email)) {
         errors.push({ email: row.email, reason: "already exists in DB" });
         continue;
       }
-      if (!validVendorIds.has(row.vendor_id)) {
-        errors.push({ email: row.email, reason: "vendor_id not found" });
-        continue;
+
+      // 벤더 resolve or create
+      let vendorId = vendorByCode.get(row.vendor_code);
+      let vendorCreatedThisRow = false;
+
+      if (!vendorId) {
+        // 신규 벤더 생성
+        if (!row.vendor_name) {
+          errors.push({
+            email: row.email,
+            reason: `vendor_code '${row.vendor_code}' not in DB and vendor_name missing`,
+          });
+          continue;
+        }
+        const { data: createdVendor, error: vErr } = await supabase
+          .from("vendor")
+          .insert({
+            vendor_code: row.vendor_code,
+            vendor_name: row.vendor_name,
+            status: "ACTIVE",
+          })
+          .select("id")
+          .single();
+        if (vErr || !createdVendor) {
+          errors.push({
+            email: row.email,
+            reason: `vendor create failed: ${vErr?.message || "unknown"}`,
+          });
+          continue;
+        }
+        vendorId = createdVendor.id;
+        vendorByCode.set(row.vendor_code, vendorId!);
+        createdVendors += 1;
+        vendorCreatedThisRow = true;
       }
 
       // 1. Supabase Auth 유저 생성
@@ -203,7 +249,7 @@ export async function POST(req: NextRequest) {
         display_name: row.display_name,
         user_type: "vendor",
         role: "VENDOR",
-        vendor_id: row.vendor_id,
+        vendor_id: vendorId,
         buyer_id: null,
         status: "ACTIVE",
       });
@@ -219,7 +265,7 @@ export async function POST(req: NextRequest) {
 
       // 3. vendor_users 생성
       const { error: vuError } = await supabase.from("vendor_users").insert({
-        vendor_id: row.vendor_id,
+        vendor_id: vendorId,
         auth_user_id: authUserId,
         email: row.email,
         user_name: row.display_name,
@@ -228,7 +274,6 @@ export async function POST(req: NextRequest) {
       });
 
       if (vuError) {
-        // rollback profile + auth
         await supabase.from("user_profiles").delete().eq("auth_user_id", authUserId);
         await admin.auth.admin.deleteUser(authUserId);
         errors.push({
@@ -243,6 +288,7 @@ export async function POST(req: NextRequest) {
         email: row.email,
         vendor_code: row.vendor_code,
         user_id: authUserId,
+        vendor_created: vendorCreatedThisRow,
       });
     }
 
@@ -250,6 +296,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       inserted,
       total_requested: rawRows.length,
+      created_vendors: createdVendors,
       errors,
       items: createdItems,
     });

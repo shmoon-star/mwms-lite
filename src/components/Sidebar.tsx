@@ -56,8 +56,7 @@ const groups = [
     label: "Admin",
     items: [
       { href: "/admin/users", label: "Users", sub: "" },
-      { href: "/admin/users/bulk-upload", label: "User Upload", sub: "CSV 일괄 등록" },
-      { href: "/admin/vendors/bulk-upload", label: "Vendor Upload", sub: "Excel 일괄 등록" },
+      { href: "/admin/users/bulk-upload", label: "Bulk Upload", sub: "CSV 일괄 등록 (Vendor+User)" },
     ],
   },
 ];

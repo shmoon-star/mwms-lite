@@ -3,16 +3,18 @@
 import { useState } from "react";
 import Link from "next/link";
 
-type RowStatus = "valid" | "conflict" | "invalid" | "duplicate";
+type RowStatus = "valid" | "valid_new_vendor" | "conflict" | "invalid" | "duplicate";
 
 type PreviewRow = {
   row_no: number;
   email: string | null;
   display_name: string | null;
   vendor_code: string | null;
-  vendor_name: string | null;
+  vendor_name: string | null; // from CSV
+  vendor_name_resolved: string | null; // from DB (if exists)
   vendor_id: string | null;
   has_password: boolean;
+  will_create_vendor: boolean;
   status: RowStatus;
   reason?: string;
 };
@@ -20,6 +22,7 @@ type PreviewRow = {
 type PreviewSummary = {
   total: number;
   valid: number;
+  valid_new_vendor: number;
   conflict: number;
   invalid: number;
   duplicate: number;
@@ -28,14 +31,17 @@ type PreviewSummary = {
 type ApplyResult = {
   inserted: number;
   total_requested: number;
+  created_vendors: number;
   errors: { email: string | null; reason: string }[];
-  items: { email: string; vendor_code: string; user_id: string }[];
+  items: { email: string; vendor_code: string; user_id: string; vendor_created: boolean }[];
 };
 
 function statusStyle(s: RowStatus): { bg: string; color: string; label: string } {
   switch (s) {
     case "valid":
       return { bg: "#dcfce7", color: "#166534", label: "Valid" };
+    case "valid_new_vendor":
+      return { bg: "#dbeafe", color: "#1e40af", label: "Valid (+ Vendor)" };
     case "conflict":
       return { bg: "#fef3c7", color: "#92400e", label: "Conflict" };
     case "invalid":
@@ -45,16 +51,17 @@ function statusStyle(s: RowStatus): { bg: string; color: string; label: string }
   }
 }
 
-const SAMPLE_CSV = `email,display_name,vendor_code,password
-vnd011@example.com,홍길동,VND-011,TempPass1!
-vnd012@example.com,김철수,VND-012,TempPass2!`;
+const SAMPLE_CSV = `email,display_name,vendor_code,vendor_name,password
+vnd011@example.com,홍길동,VND-011,1993 STUDIO,TempPass1!
+vnd012@example.com,김철수,VND-012,AAKAM,TempPass2!
+intern@example.com,이인턴,VND-011,,TempPass3!`;
 
 function downloadTemplate() {
   const blob = new Blob(["\ufeff" + SAMPLE_CSV], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "vendor_users_template.csv";
+  a.download = "user_bulk_upload_template.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -68,7 +75,6 @@ export default function BulkUserUploadPage() {
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPasswords, setShowPasswords] = useState(false);
-  // Preview에서 password도 함께 저장해둠 (Apply 시 같이 전달해야 함)
   const [rawPasswords, setRawPasswords] = useState<Record<number, string>>({});
 
   async function handlePreview() {
@@ -83,8 +89,8 @@ export default function BulkUserUploadPage() {
     setPreviewing(true);
 
     try {
-      // CSV 원본을 먼저 클라이언트에서도 읽어 password를 row_no 별로 저장
-      // (서버 응답에는 password가 빠지기 때문)
+      // Preview 시에 password를 클라이언트에도 row_no별로 저장
+      // (서버 응답에는 password가 빠지기 때문에 Apply 때 다시 보내야 함)
       const text = await file.text();
       const lines = text
         .replace(/^\uFEFF/, "")
@@ -93,19 +99,16 @@ export default function BulkUserUploadPage() {
         .split("\n")
         .filter((l) => l.trim() !== "");
       const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
-      const emailIdx = headers.indexOf("email");
       const pwIdx = headers.indexOf("password");
       const passwords: Record<number, string> = {};
-      if (emailIdx >= 0 && pwIdx >= 0) {
+      if (pwIdx >= 0) {
         for (let i = 1; i < lines.length; i += 1) {
-          // 간단 파싱 (preview 검증용, 따옴표 포함 case는 서버에서 제대로 처리)
           const cells = lines[i].split(",");
           passwords[i + 1] = (cells[pwIdx] || "").trim();
         }
       }
       setRawPasswords(passwords);
 
-      // 서버로 FormData 전송
       const form = new FormData();
       form.set("file", file);
       const res = await fetch("/api/admin/users/bulk/preview", {
@@ -127,26 +130,28 @@ export default function BulkUserUploadPage() {
 
   async function handleApply() {
     if (!rows || !summary) return;
-    const validRows = rows
-      .filter((r) => r.status === "valid")
-      .map((r) => ({
-        email: r.email,
-        display_name: r.display_name,
-        vendor_code: r.vendor_code,
-        vendor_id: r.vendor_id,
-        password: rawPasswords[r.row_no] || "",
-      }));
+    const applicable = rows.filter(
+      (r) => r.status === "valid" || r.status === "valid_new_vendor"
+    );
+    const validRows = applicable.map((r) => ({
+      email: r.email,
+      display_name: r.display_name,
+      vendor_code: r.vendor_code,
+      vendor_name: r.vendor_name, // 신규 벤더 생성용
+      vendor_id: r.vendor_id,
+      password: rawPasswords[r.row_no] || "",
+    }));
 
     if (validRows.length === 0) {
       setError("등록 가능한 유저가 없습니다.");
       return;
     }
-    if (
-      !confirm(
-        `${validRows.length}명의 Vendor User 계정을 생성합니다.\n각 계정은 Supabase Auth + user_profiles + vendor_users 3곳에 기록됩니다.\n계속할까요?`
-      )
-    )
-      return;
+    const newVendorCount = applicable.filter((r) => r.status === "valid_new_vendor").length;
+    const msg =
+      newVendorCount > 0
+        ? `${validRows.length}명의 Vendor User 계정을 생성합니다.\n그 중 ${newVendorCount}개 행은 신규 벤더도 함께 생성됩니다.\n계속할까요?`
+        : `${validRows.length}명의 Vendor User 계정을 생성합니다.\n계속할까요?`;
+    if (!confirm(msg)) return;
 
     setError(null);
     setApplying(true);
@@ -163,6 +168,7 @@ export default function BulkUserUploadPage() {
       setApplyResult({
         inserted: json.inserted ?? 0,
         total_requested: json.total_requested ?? validRows.length,
+        created_vendors: json.created_vendors ?? 0,
         errors: json.errors ?? [],
         items: json.items ?? [],
       });
@@ -182,18 +188,20 @@ export default function BulkUserUploadPage() {
     setRawPasswords({});
   }
 
+  const totalApplicable = summary ? summary.valid + summary.valid_new_vendor : 0;
+
   return (
     <div className="p-6 space-y-6 max-w-6xl">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">유저 일괄 등록 (Vendor Users)</h1>
+          <h1 className="text-2xl font-semibold">벤더 + 유저 일괄 등록</h1>
           <p className="text-sm text-gray-500 mt-1">
-            CSV 파일에서 여러 Vendor User 계정을 한 번에 생성합니다. 벤더 마스터는 미리 등록돼
-            있어야 합니다.
+            CSV 파일로 Vendor와 Vendor User를 한 번에 등록합니다. vendor_code가 DB에 없는 경우
+            자동으로 벤더도 생성됩니다 (vendor_name 필수).
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            CSV 헤더: <code>email</code>, <code>display_name</code>, <code>vendor_code</code>,{" "}
-            <code>password</code> · UTF-8 권장 · 비밀번호 8자 이상
+            CSV 헤더: <code>email, display_name, vendor_code, vendor_name, password</code> · UTF-8
+            권장 · 비밀번호 8자 이상
           </p>
         </div>
         <div className="flex gap-2">
@@ -213,7 +221,24 @@ export default function BulkUserUploadPage() {
         </div>
       </div>
 
-      {/* 안내 — 보안 주의 */}
+      {/* 안내 */}
+      <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900 space-y-1">
+        <div>
+          ℹ️ <strong>동작 방식:</strong>
+        </div>
+        <ul className="list-disc pl-5 space-y-0.5">
+          <li>
+            <code>vendor_code</code>가 DB에 존재하면 해당 벤더에 유저를 추가 (<code>vendor_name</code>{" "}
+            무시)
+          </li>
+          <li>
+            <code>vendor_code</code>가 DB에 없으면 <code>vendor_name</code>으로 벤더 신규 생성 후
+            유저 추가
+          </li>
+          <li>동일 <code>vendor_code</code>에 여러 이메일이 연결될 수 있음 (행 여러 개)</li>
+        </ul>
+      </div>
+
       <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
         ⚠️ <strong>보안 주의:</strong> CSV에 비밀번호가 평문으로 들어갑니다. 업로드 완료 후 파일은
         반드시 삭제하세요. 각 사용자에게는 <strong>임시 비밀번호</strong>를 부여하고 첫 로그인 후
@@ -257,25 +282,29 @@ export default function BulkUserUploadPage() {
 
       {/* Summary */}
       {summary && (
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-6 gap-3">
           <div className="rounded-lg border p-3">
             <div className="text-xs text-gray-500">총</div>
             <div className="text-xl font-semibold">{summary.total}</div>
           </div>
           <div className="rounded-lg border p-3 bg-green-50">
-            <div className="text-xs text-gray-600">생성 가능 (Valid)</div>
+            <div className="text-xs text-gray-600">Valid (기존 벤더)</div>
             <div className="text-xl font-semibold text-green-700">{summary.valid}</div>
           </div>
+          <div className="rounded-lg border p-3 bg-blue-50">
+            <div className="text-xs text-gray-600">Valid + 신규 벤더</div>
+            <div className="text-xl font-semibold text-blue-700">{summary.valid_new_vendor}</div>
+          </div>
           <div className="rounded-lg border p-3 bg-amber-50">
-            <div className="text-xs text-gray-600">이미 존재 (Conflict)</div>
+            <div className="text-xs text-gray-600">Conflict (email 중복)</div>
             <div className="text-xl font-semibold text-amber-700">{summary.conflict}</div>
           </div>
           <div className="rounded-lg border p-3 bg-amber-50">
-            <div className="text-xs text-gray-600">파일 내 중복 (Duplicate)</div>
+            <div className="text-xs text-gray-600">Duplicate (파일 내)</div>
             <div className="text-xl font-semibold text-amber-700">{summary.duplicate}</div>
           </div>
           <div className="rounded-lg border p-3 bg-red-50">
-            <div className="text-xs text-gray-600">유효하지 않음 (Invalid)</div>
+            <div className="text-xs text-gray-600">Invalid</div>
             <div className="text-xl font-semibold text-red-700">{summary.invalid}</div>
           </div>
         </div>
@@ -299,10 +328,10 @@ export default function BulkUserUploadPage() {
             <button
               type="button"
               onClick={handleApply}
-              disabled={applying || !summary || summary.valid === 0}
+              disabled={applying || totalApplicable === 0}
               className="rounded bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 disabled:opacity-40"
             >
-              {applying ? "Creating..." : `Apply (${summary?.valid ?? 0} 계정 생성)`}
+              {applying ? "Creating..." : `Apply (${totalApplicable}개 처리)`}
             </button>
           </div>
           <div className="max-h-[600px] overflow-y-auto">
@@ -315,7 +344,7 @@ export default function BulkUserUploadPage() {
                   <th className="px-3 py-2 text-left">Vendor Code</th>
                   <th className="px-3 py-2 text-left">Vendor Name</th>
                   <th className="px-3 py-2 text-left">Password</th>
-                  <th className="px-3 py-2 text-left w-28">Status</th>
+                  <th className="px-3 py-2 text-left w-32">Status</th>
                   <th className="px-3 py-2 text-left">Reason</th>
                 </tr>
               </thead>
@@ -323,15 +352,16 @@ export default function BulkUserUploadPage() {
                 {rows.map((r, i) => {
                   const st = statusStyle(r.status);
                   const pw = rawPasswords[r.row_no] || "";
+                  const displayVendorName =
+                    r.vendor_name_resolved ||
+                    (r.will_create_vendor ? `🆕 ${r.vendor_name ?? "-"}` : r.vendor_name ?? "-");
                   return (
                     <tr key={i} className="border-t">
                       <td className="px-3 py-1.5 text-gray-500 font-mono">{r.row_no}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">{r.email ?? "-"}</td>
                       <td className="px-3 py-1.5">{r.display_name ?? "-"}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">{r.vendor_code ?? "-"}</td>
-                      <td className="px-3 py-1.5 text-xs text-gray-600">
-                        {r.vendor_name ?? "-"}
-                      </td>
+                      <td className="px-3 py-1.5 text-xs text-gray-700">{displayVendorName}</td>
                       <td className="px-3 py-1.5 font-mono text-xs">
                         {showPasswords
                           ? pw || "-"
@@ -366,11 +396,15 @@ export default function BulkUserUploadPage() {
       {/* Apply Result */}
       {applyResult && (
         <div className="rounded-xl border-2 border-green-400 bg-green-50 p-5 space-y-3">
-          <div className="text-lg font-bold text-green-700">✅ 계정 생성 완료</div>
-          <div className="grid grid-cols-3 gap-3 text-sm">
+          <div className="text-lg font-bold text-green-700">✅ 등록 완료</div>
+          <div className="grid grid-cols-4 gap-3 text-sm">
             <div>
-              <span className="text-gray-600">생성: </span>
+              <span className="text-gray-600">생성된 유저: </span>
               <span className="font-semibold text-green-700">{applyResult.inserted}</span>
+            </div>
+            <div>
+              <span className="text-gray-600">신규 벤더 생성: </span>
+              <span className="font-semibold text-blue-700">{applyResult.created_vendors}</span>
             </div>
             <div>
               <span className="text-gray-600">요청: </span>
