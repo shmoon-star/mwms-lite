@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef } from "react";
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ComposedChart,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer,
 } from "recharts";
 
 type Summary = {
@@ -242,21 +242,7 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {/* Shipment Lead Time */}
-      {data.leadTime.length > 0 && (
-        <div className="rounded-xl border p-4">
-          <h2 className="text-lg font-semibold mb-3">Shipment Lead Time (ETD → ATA, 평균 일수)</h2>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={data.leadTime}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="year_month" />
-              <YAxis />
-              <Tooltip />
-              <Line type="monotone" dataKey="avg_days" stroke="#3b82f6" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      {/* Shipment Lead Time 섹션은 Export Dashboard와 중복이므로 제거됨 */}
 
       {/* Settlement 자동 안분 */}
       <div className="rounded-xl border p-4">
