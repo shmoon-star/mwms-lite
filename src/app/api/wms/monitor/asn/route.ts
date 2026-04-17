@@ -9,24 +9,32 @@ function normalizeView(view: string) {
   return "all";
 }
 
+/**
+ * qty_expected가 0일 때 qty로 fallback (nullish coalescing은 0을 valid로 취급하므로 > 0 체크 필요)
+ * PL FINALIZE 경로는 qty_expected를 0으로 저장하고 실제 값을 qty에 넣음
+ */
 function inferExpected(row: Record<string, any>) {
-  return Number(
-    row.qty_expected ??
-      row.expected_qty ??
-      row.qty ??
-      row.qty_ordered ??
-      row.planned_qty ??
-      0
-  );
+  const candidates = [
+    row.qty_expected,
+    row.expected_qty,
+    row.qty,
+    row.qty_ordered,
+    row.planned_qty,
+  ];
+  for (const v of candidates) {
+    const n = Number(v ?? 0);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
 }
 
 function inferReceived(row: Record<string, any>) {
-  return Number(
-    row.qty_received ??
-      row.received_qty ??
-      row.qty_done ??
-      0
-  );
+  const candidates = [row.qty_received, row.received_qty, row.qty_done];
+  for (const v of candidates) {
+    const n = Number(v ?? 0);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
 }
 
 function deriveAsnStatus(expected: number, received: number) {
@@ -56,28 +64,10 @@ async function loadAsnLines(sb: any, asnIds: string[]) {
     if (error) throw new Error(error.message || "Failed to load ASN lines");
     if (!data || data.length === 0) break;
     result.push(...data);
-    console.log(`[monitor/asn] loadAsnLines page ${page}: got ${data.length} rows (total so far ${result.length})`);
     if (data.length < PAGE_SIZE) break;
     page += 1;
-    if (page > 200) break;
+    if (page > 200) break; // safety: 최대 200,000행
   }
-  console.log(`[monitor/asn] loadAsnLines TOTAL: ${result.length} rows for ${asnIds.length} ASNs`);
-
-  // 특정 ASN의 qty 합 진단
-  const targetAsnId = "107d039c-00b1-4f49-9883-3804f6de494d";
-  const matching = result.filter((r: any) => r.asn_id === targetAsnId);
-  const totalQty = matching.reduce((s: number, r: any) => s + Number(r.qty || 0), 0);
-  console.log(`[monitor/asn] TARGET ASN ${targetAsnId}: ${matching.length} lines, total qty = ${totalQty}`);
-  if (matching.length > 0) {
-    console.log(`[monitor/asn] First 3 target lines:`, matching.slice(0, 3).map((r: any) => ({
-      line_no: r.line_no,
-      sku: r.sku,
-      qty: r.qty,
-      qty_expected: r.qty_expected,
-      qty_received: r.qty_received,
-    })));
-  }
-
   return result;
 }
 
