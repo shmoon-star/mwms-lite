@@ -43,16 +43,25 @@ function isClosedStatus(status?: string | null) {
 async function loadAsnLines(sb: any, asnIds: string[]) {
   if (!asnIds.length) return [];
 
-  const { data, error } = await sb
-    .from("asn_line")
-    .select("*")
-    .in("asn_id", asnIds);
-
-  if (error) {
-    throw new Error(error.message || "Failed to load ASN lines");
+  // Supabase 기본 1000행 제한 우회 — 페이지네이션으로 전체 조회
+  // ASN line 수가 많을 때 (예: 한 PL에 282 line) 누락 방지
+  const PAGE_SIZE = 1000;
+  const result: any[] = [];
+  let page = 0;
+  while (true) {
+    const { data, error } = await sb
+      .from("asn_line")
+      .select("*")
+      .in("asn_id", asnIds)
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    if (error) throw new Error(error.message || "Failed to load ASN lines");
+    if (!data || data.length === 0) break;
+    result.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    page += 1;
+    if (page > 200) break; // safety: 최대 200,000행
   }
-
-  return data || [];
+  return result;
 }
 
 export async function GET(req: Request) {
@@ -61,19 +70,30 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const view = normalizeView(url.searchParams.get("view") || "all");
 
-    const { data: headers, error: headerError } = await sb
-      .from("asn_header")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (headerError) {
-      return NextResponse.json(
-        { ok: false, error: headerError.message },
-        { status: 500 }
-      );
+    // Supabase 기본 1000행 제한 우회 — 페이지네이션
+    const HEADER_PAGE_SIZE = 1000;
+    const headerRows: Record<string, any>[] = [];
+    {
+      let page = 0;
+      while (true) {
+        const { data, error } = await sb
+          .from("asn_header")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .range(page * HEADER_PAGE_SIZE, (page + 1) * HEADER_PAGE_SIZE - 1);
+        if (error) {
+          return NextResponse.json(
+            { ok: false, error: error.message },
+            { status: 500 }
+          );
+        }
+        if (!data || data.length === 0) break;
+        headerRows.push(...data);
+        if (data.length < HEADER_PAGE_SIZE) break;
+        page += 1;
+        if (page > 50) break; // safety
+      }
     }
-
-    const headerRows = (headers || []) as Record<string, any>[];
     const asnIds = headerRows.map((row) => row.id).filter(Boolean);
 
     if (asnIds.length === 0) {

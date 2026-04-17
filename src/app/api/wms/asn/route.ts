@@ -93,20 +93,40 @@ function pickCartonNo(
   return null;
 }
 
+/**
+ * Supabase 1000행 제한 우회 — 단일 .in() 또는 .order() 쿼리를 페이지네이션으로 전체 수집
+ */
+async function fetchAllPaginated<T>(
+  builder: (from: number, to: number) => any,
+  opts: { pageSize?: number; maxPages?: number } = {}
+): Promise<T[]> {
+  const pageSize = opts.pageSize ?? 1000;
+  const maxPages = opts.maxPages ?? 200;
+  const out: T[] = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const { data, error } = await builder(page * pageSize, (page + 1) * pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    out.push(...(data as T[]));
+    if (data.length < pageSize) break;
+  }
+  return out;
+}
+
 export async function GET(req: Request) {
   try {
     const sb = await createClient();
     const url = new URL(req.url);
     const keyword = (url.searchParams.get("keyword") || "").trim().toLowerCase();
 
-    const { data: headersRaw, error: headerErr } = await sb
-      .from("asn_header")
-      .select("id, asn_no, po_id, vendor_id, status, source_type, source_id, created_at")
-      .order("created_at", { ascending: false });
-
-    if (headerErr) throw headerErr;
-
-    const headers = (headersRaw ?? []) as AsnHeaderRow[];
+    // 전체 ASN header 조회 (1000행 제한 우회)
+    const headers = await fetchAllPaginated<AsnHeaderRow>((from, to) =>
+      sb
+        .from("asn_header")
+        .select("id, asn_no, po_id, vendor_id, status, source_type, source_id, created_at")
+        .order("created_at", { ascending: false })
+        .range(from, to)
+    );
 
     if (headers.length === 0) {
       return NextResponse.json({ ok: true, items: [] });
@@ -129,26 +149,25 @@ export async function GET(req: Request) {
       )
     ) as string[];
 
-    const { data: asnLinesRaw, error: asnLineErr } = await sb
-      .from("asn_line")
-      .select("id, asn_id, line_no, sku, carton_no, qty_expected, qty")
-      .in("asn_id", asnIds);
-
-    if (asnLineErr) throw asnLineErr;
-
-    const asnLines = (asnLinesRaw ?? []) as AsnLineRow[];
+    // ASN line 전체 (1000행 제한 우회, 특히 PL line 수 많을 때 필수)
+    const asnLines = await fetchAllPaginated<AsnLineRow>((from, to) =>
+      sb
+        .from("asn_line")
+        .select("id, asn_id, line_no, sku, carton_no, qty_expected, qty")
+        .in("asn_id", asnIds)
+        .range(from, to)
+    );
     const asnLineIds = asnLines.map((r) => r.id);
 
     let grLines: GrLineRow[] = [];
     if (asnLineIds.length > 0) {
-      const { data: grLinesRaw, error: grLineErr } = await sb
-        .from("gr_line")
-        .select("asn_line_id, qty_received, qty")
-        .in("asn_line_id", asnLineIds);
-
-      if (grLineErr) throw grLineErr;
-
-      grLines = (grLinesRaw ?? []) as GrLineRow[];
+      grLines = await fetchAllPaginated<GrLineRow>((from, to) =>
+        sb
+          .from("gr_line")
+          .select("asn_line_id, qty_received, qty")
+          .in("asn_line_id", asnLineIds)
+          .range(from, to)
+      );
     }
 
     let packingHeaderMap = new Map<string, PackingListHeaderRow>();
@@ -166,14 +185,13 @@ export async function GET(req: Request) {
 
     const packingLineMap = new Map<string, PackingListLineRow>();
     if (packingListIds.length > 0) {
-      const { data: plLinesRaw, error: plLineErr } = await sb
-        .from("packing_list_lines")
-        .select("packing_list_id, line_no, sku, qty, carton_no")
-        .in("packing_list_id", packingListIds);
-
-      if (plLineErr) throw plLineErr;
-
-      const plLines = (plLinesRaw ?? []) as PackingListLineRow[];
+      const plLines = await fetchAllPaginated<PackingListLineRow>((from, to) =>
+        sb
+          .from("packing_list_lines")
+          .select("packing_list_id, line_no, sku, qty, carton_no")
+          .in("packing_list_id", packingListIds)
+          .range(from, to)
+      );
       for (const row of plLines) {
         packingLineMap.set(
           `${row.packing_list_id}::${makePackingLineKey(row.line_no, row.sku)}`,
