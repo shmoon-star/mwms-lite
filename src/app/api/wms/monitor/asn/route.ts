@@ -44,7 +44,6 @@ async function loadAsnLines(sb: any, asnIds: string[]) {
   if (!asnIds.length) return [];
 
   // Supabase 기본 1000행 제한 우회 — 페이지네이션으로 전체 조회
-  // ASN line 수가 많을 때 (예: 한 PL에 282 line) 누락 방지
   const PAGE_SIZE = 1000;
   const result: any[] = [];
   let page = 0;
@@ -57,10 +56,28 @@ async function loadAsnLines(sb: any, asnIds: string[]) {
     if (error) throw new Error(error.message || "Failed to load ASN lines");
     if (!data || data.length === 0) break;
     result.push(...data);
+    console.log(`[monitor/asn] loadAsnLines page ${page}: got ${data.length} rows (total so far ${result.length})`);
     if (data.length < PAGE_SIZE) break;
     page += 1;
-    if (page > 200) break; // safety: 최대 200,000행
+    if (page > 200) break;
   }
+  console.log(`[monitor/asn] loadAsnLines TOTAL: ${result.length} rows for ${asnIds.length} ASNs`);
+
+  // 특정 ASN의 qty 합 진단
+  const targetAsnId = "107d039c-00b1-4f49-9883-3804f6de494d";
+  const matching = result.filter((r: any) => r.asn_id === targetAsnId);
+  const totalQty = matching.reduce((s: number, r: any) => s + Number(r.qty || 0), 0);
+  console.log(`[monitor/asn] TARGET ASN ${targetAsnId}: ${matching.length} lines, total qty = ${totalQty}`);
+  if (matching.length > 0) {
+    console.log(`[monitor/asn] First 3 target lines:`, matching.slice(0, 3).map((r: any) => ({
+      line_no: r.line_no,
+      sku: r.sku,
+      qty: r.qty,
+      qty_expected: r.qty_expected,
+      qty_received: r.qty_received,
+    })));
+  }
+
   return result;
 }
 
