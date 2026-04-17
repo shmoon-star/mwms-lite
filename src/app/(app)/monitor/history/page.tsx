@@ -43,6 +43,7 @@ type HistoryData = {
   leadTime: { year_month: string; avg_days: number }[];
   allocations: Allocation[];
   allMonths: string[];
+  shipmentByContainer: { container: string; count: number }[];
 };
 
 function fmtNum(n: number): string {
@@ -173,6 +174,16 @@ export default function HistoryPage() {
         <div className="rounded-xl border p-4">
           <div className="text-xs text-gray-500">Shipment (건 / Qty)</div>
           <div className="mt-1 text-xl font-semibold">{fmtNum(s.shipment_count)} / {fmtNum(s.total_shipment_qty)}</div>
+          {data.shipmentByContainer && data.shipmentByContainer.length > 0 && (
+            <div className="mt-2 pt-2 border-t space-y-0.5">
+              {data.shipmentByContainer.map((c) => (
+                <div key={c.container} className="flex items-center justify-between text-[11px]">
+                  <span className="text-gray-600">{c.container}</span>
+                  <span className="font-semibold text-gray-800">{c.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="rounded-xl border p-4">
           <div className="text-xs text-gray-500">Total Cost</div>

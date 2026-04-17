@@ -67,6 +67,24 @@ export async function GET() {
     const shipmentDocs = uniqueDocsByType("SHIPMENT");
     const grDocs = uniqueDocsByType("GR");
 
+    // === Shipment 컨테이너 종류별 분류 ===
+    // 같은 shipment_no는 컨테이너 1번만 카운트 (첫 번째 등장값 기준)
+    const shipmentContainerMap = new Map<string, string>(); // shipment_no → container
+    for (const d of documents) {
+      if (d.doc_type !== "SHIPMENT") continue;
+      if (!d.doc_no) continue;
+      if (shipmentContainerMap.has(String(d.doc_no))) continue;
+      const container = (d.container ? String(d.container).trim() : "") || "(미지정)";
+      shipmentContainerMap.set(String(d.doc_no), container);
+    }
+    const containerCountMap = new Map<string, number>();
+    for (const c of shipmentContainerMap.values()) {
+      containerCountMap.set(c, (containerCountMap.get(c) || 0) + 1);
+    }
+    const shipmentByContainer = Array.from(containerCountMap.entries())
+      .map(([container, count]) => ({ container, count }))
+      .sort((a, b) => b.count - a.count);
+
     const summary = {
       total_docs: poDocs.size + dnDocs.size + shipmentDocs.size + grDocs.size,
       total_lines: documents.length, // 참고용 (총 row 수)
@@ -180,6 +198,7 @@ export async function GET() {
       leadTime,
       allocations,
       allMonths,
+      shipmentByContainer,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "Failed" }, { status: 500 });
