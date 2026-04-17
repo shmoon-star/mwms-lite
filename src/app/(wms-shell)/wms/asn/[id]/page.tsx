@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 type WmsAsnLine = {
   asn_line_id: string;
@@ -66,6 +66,8 @@ export default function WmsAsnDetailPage({
   const [saveMessage, setSaveMessage] = useState("");
   const [saveOk, setSaveOk] = useState(false);
   const [boxFilter, setBoxFilter] = useState("");
+  const [expandedCartons, setExpandedCartons] = useState<Record<string, boolean>>({});
+  const [showOnlyMix, setShowOnlyMix] = useState(false);
 
   // Key-in quantities per asn_line_id
   const [values, setValues] = useState<Record<string, number>>({});
@@ -156,6 +158,69 @@ export default function WmsAsnDetailPage({
       return haystack.includes(q);
     });
   }, [detail, boxFilter]);
+
+  // Carton 분류: SINGLE (한 SKU만) vs MIX (2개 이상 SKU)
+  const cartonBreakdown = useMemo(() => {
+    if (!detail) {
+      return {
+        cartons: [] as {
+          carton_no: string;
+          sku_count: number;
+          total_qty: number;
+          skus: { sku: string; qty: number }[];
+          type: "SINGLE" | "MIX";
+        }[],
+        summary: { total: 0, single: 0, mix: 0 },
+      };
+    }
+
+    const map = new Map<
+      string,
+      { carton_no: string; skuMap: Map<string, number> }
+    >();
+
+    for (const line of detail.lines || []) {
+      const carton = (line.carton_no || "").trim();
+      if (!carton) continue;
+      const sku = (line.sku || "").trim();
+      if (!sku) continue;
+
+      if (!map.has(carton)) {
+        map.set(carton, { carton_no: carton, skuMap: new Map() });
+      }
+      const entry = map.get(carton)!;
+      const prev = entry.skuMap.get(sku) || 0;
+      entry.skuMap.set(sku, prev + safeNum(line.asn_qty));
+    }
+
+    const cartons = Array.from(map.values())
+      .map((c) => {
+        const skus = Array.from(c.skuMap.entries())
+          .map(([sku, qty]) => ({ sku, qty }))
+          .sort((a, b) => b.qty - a.qty);
+        const total_qty = skus.reduce((s, x) => s + x.qty, 0);
+        return {
+          carton_no: c.carton_no,
+          sku_count: skus.length,
+          total_qty,
+          skus,
+          type: (skus.length > 1 ? "MIX" : "SINGLE") as "MIX" | "SINGLE",
+        };
+      })
+      .sort((a, b) => {
+        // MIX 먼저, 그 안에서는 SKU 수 많은 순
+        if (a.type !== b.type) return a.type === "MIX" ? -1 : 1;
+        return b.sku_count - a.sku_count;
+      });
+
+    const summary = {
+      total: cartons.length,
+      single: cartons.filter((c) => c.type === "SINGLE").length,
+      mix: cartons.filter((c) => c.type === "MIX").length,
+    };
+
+    return { cartons, summary };
+  }, [detail]);
 
   // Lines where keyin qty ≠ asn_qty → need a reason
   const mismatchedLineIds = useMemo(() => {
@@ -328,6 +393,134 @@ export default function WmsAsnDetailPage({
               {saveOk ? "✅ " : "❌ "}{saveMessage}
             </div>
           ) : null}
+
+          {/* Carton Breakdown — SINGLE vs MIX 분류 */}
+          {cartonBreakdown.cartons.length > 0 && (
+            <div className="border rounded bg-white overflow-hidden">
+              <div className="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <div className="font-medium">📦 Carton Breakdown</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    박스에 담긴 SKU 종류 수로 분류 — MIX 박스는 picking 시 분리 필요
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-600 px-2 py-1 rounded bg-gray-100 border">
+                    총 {cartonBreakdown.summary.total}박스
+                  </span>
+                  <span className="text-xs px-2 py-1 rounded bg-green-50 border border-green-200 text-green-700 font-medium">
+                    🟢 SINGLE {cartonBreakdown.summary.single}
+                  </span>
+                  <span className="text-xs px-2 py-1 rounded bg-orange-50 border border-orange-200 text-orange-700 font-medium">
+                    🟠 MIX {cartonBreakdown.summary.mix}
+                  </span>
+                  <label className="text-xs text-gray-600 flex items-center gap-1 ml-2">
+                    <input
+                      type="checkbox"
+                      checked={showOnlyMix}
+                      onChange={(e) => setShowOnlyMix(e.target.checked)}
+                    />
+                    MIX만 보기
+                  </label>
+                </div>
+              </div>
+
+              <div className="overflow-auto max-h-[420px]">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-600 sticky top-0">
+                    <tr>
+                      <th className="text-left px-4 py-2 border-b w-32">Type</th>
+                      <th className="text-left px-4 py-2 border-b">Carton No</th>
+                      <th className="text-right px-4 py-2 border-b w-24">SKU 종류</th>
+                      <th className="text-right px-4 py-2 border-b w-28">Total Qty</th>
+                      <th className="text-center px-4 py-2 border-b w-24">상세</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cartonBreakdown.cartons
+                      .filter((c) => !showOnlyMix || c.type === "MIX")
+                      .map((c) => {
+                        const isMix = c.type === "MIX";
+                        const isExpanded = !!expandedCartons[c.carton_no];
+                        return (
+                          <Fragment key={c.carton_no}>
+                            <tr className={`border-b ${isMix ? "bg-orange-50/40" : ""}`}>
+                              <td className="px-4 py-2">
+                                {isMix ? (
+                                  <span className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200 font-semibold">
+                                    🟠 MIX
+                                  </span>
+                                ) : (
+                                  <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-800 border border-green-200 font-semibold">
+                                    🟢 SINGLE
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 font-mono text-xs">{c.carton_no}</td>
+                              <td className="px-4 py-2 text-right font-semibold">
+                                {c.sku_count}
+                              </td>
+                              <td className="px-4 py-2 text-right">{c.total_qty}</td>
+                              <td className="px-4 py-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedCartons((prev) => ({
+                                      ...prev,
+                                      [c.carton_no]: !prev[c.carton_no],
+                                    }))
+                                  }
+                                  className="text-xs text-blue-600 hover:underline"
+                                >
+                                  {isExpanded ? "접기" : `보기 (${c.sku_count})`}
+                                </button>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr key={c.carton_no + "-detail"} className="bg-gray-50">
+                                <td colSpan={5} className="px-4 py-2">
+                                  <div className="text-xs text-gray-600 mb-2">
+                                    Carton <b className="font-mono">{c.carton_no}</b> 안의 SKU
+                                    내역:
+                                  </div>
+                                  <table className="min-w-full text-xs bg-white border rounded">
+                                    <thead className="bg-white">
+                                      <tr>
+                                        <th className="text-left px-3 py-1.5 border-b">SKU</th>
+                                        <th className="text-right px-3 py-1.5 border-b w-24">
+                                          Qty
+                                        </th>
+                                        <th className="text-right px-3 py-1.5 border-b w-20">
+                                          비중
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {c.skus.map((s) => (
+                                        <tr key={s.sku} className="border-b">
+                                          <td className="px-3 py-1.5 font-mono">{s.sku}</td>
+                                          <td className="px-3 py-1.5 text-right">{s.qty}</td>
+                                          <td className="px-3 py-1.5 text-right text-gray-500">
+                                            {c.total_qty > 0
+                                              ? ((s.qty / c.total_qty) * 100).toFixed(1)
+                                              : "0"}
+                                            %
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Lines Table */}
           <div className="border rounded bg-white overflow-hidden">
