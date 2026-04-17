@@ -94,9 +94,10 @@ function pickCartonNo(
 }
 
 /**
- * Supabase 1000행 제한 우회 — 단일 .in() 또는 .order() 쿼리를 페이지네이션으로 전체 수집
+ * Supabase 1000행 제한 우회 — 페이지네이션으로 전체 수집
  */
 async function fetchAllPaginated<T>(
+  label: string,
   builder: (from: number, to: number) => any,
   opts: { pageSize?: number; maxPages?: number } = {}
 ): Promise<T[]> {
@@ -104,11 +105,47 @@ async function fetchAllPaginated<T>(
   const maxPages = opts.maxPages ?? 200;
   const out: T[] = [];
   for (let page = 0; page < maxPages; page += 1) {
-    const { data, error } = await builder(page * pageSize, (page + 1) * pageSize - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    out.push(...(data as T[]));
-    if (data.length < pageSize) break;
+    try {
+      const { data, error } = await builder(page * pageSize, (page + 1) * pageSize - 1);
+      if (error) {
+        console.error(`[wms/asn] ${label} page ${page} error:`, error);
+        throw new Error(`${label} p${page} failed: ${error.message || error}`);
+      }
+      if (!data || data.length === 0) break;
+      out.push(...(data as T[]));
+      if (data.length < pageSize) break;
+    } catch (e: any) {
+      console.error(`[wms/asn] ${label} page ${page} exception:`, e?.message || e);
+      throw new Error(`${label} p${page} exception: ${e?.message || e}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * .in() 조회 시 IDs가 많으면 URL/쿼리 한계에 걸릴 수 있으므로 chunk 단위로 분할 조회
+ */
+async function fetchByIdsChunked<T>(
+  label: string,
+  ids: string[],
+  chunkSize: number,
+  builder: (idsChunk: string[]) => any
+): Promise<T[]> {
+  if (!ids.length) return [];
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    try {
+      const { data, error } = await builder(chunk);
+      if (error) {
+        console.error(`[wms/asn] ${label} chunk ${i}/${ids.length} error:`, error);
+        throw new Error(`${label} chunk${i} failed: ${error.message || error}`);
+      }
+      if (data) out.push(...(data as T[]));
+    } catch (e: any) {
+      console.error(`[wms/asn] ${label} chunk ${i}/${ids.length} exception:`, e?.message || e);
+      throw new Error(`${label} chunk${i} exception: ${e?.message || e}`);
+    }
   }
   return out;
 }
@@ -119,14 +156,19 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const keyword = (url.searchParams.get("keyword") || "").trim().toLowerCase();
 
+    console.log("[wms/asn] GET start");
+
     // 전체 ASN header 조회 (1000행 제한 우회)
-    const headers = await fetchAllPaginated<AsnHeaderRow>((from, to) =>
-      sb
-        .from("asn_header")
-        .select("id, asn_no, po_id, vendor_id, status, source_type, source_id, created_at")
-        .order("created_at", { ascending: false })
-        .range(from, to)
+    const headers = await fetchAllPaginated<AsnHeaderRow>(
+      "asn_header",
+      (from, to) =>
+        sb
+          .from("asn_header")
+          .select("id, asn_no, po_id, vendor_id, status, source_type, source_id, created_at")
+          .order("created_at", { ascending: false })
+          .range(from, to)
     );
+    console.log(`[wms/asn] asn_header: ${headers.length} rows`);
 
     if (headers.length === 0) {
       return NextResponse.json({ ok: true, items: [] });
@@ -149,78 +191,117 @@ export async function GET(req: Request) {
       )
     ) as string[];
 
-    // ASN line 전체 (1000행 제한 우회, 특히 PL line 수 많을 때 필수)
-    const asnLines = await fetchAllPaginated<AsnLineRow>((from, to) =>
-      sb
-        .from("asn_line")
-        .select("id, asn_id, line_no, sku, carton_no, qty_expected, qty")
-        .in("asn_id", asnIds)
-        .range(from, to)
-    );
+    // ASN line — asn_id chunk로 분할 조회 (URL 길이 제한 대응)
+    // 각 chunk 안에서도 1000행 넘을 수 있으므로 페이지네이션 병행
+    const ID_CHUNK = 50; // 한번에 넣을 UUID 개수
+    const asnLines: AsnLineRow[] = [];
+    for (let i = 0; i < asnIds.length; i += ID_CHUNK) {
+      const idsChunk = asnIds.slice(i, i + ID_CHUNK);
+      const chunkRows = await fetchAllPaginated<AsnLineRow>(
+        `asn_line chunk ${i}`,
+        (from, to) =>
+          sb
+            .from("asn_line")
+            .select("id, asn_id, line_no, sku, carton_no, qty_expected, qty")
+            .in("asn_id", idsChunk)
+            .order("id", { ascending: true })
+            .range(from, to)
+      );
+      asnLines.push(...chunkRows);
+    }
+    console.log(`[wms/asn] asn_line: ${asnLines.length} rows`);
+
     const asnLineIds = asnLines.map((r) => r.id);
 
     let grLines: GrLineRow[] = [];
     if (asnLineIds.length > 0) {
-      grLines = await fetchAllPaginated<GrLineRow>((from, to) =>
-        sb
-          .from("gr_line")
-          .select("asn_line_id, qty_received, qty")
-          .in("asn_line_id", asnLineIds)
-          .range(from, to)
-      );
+      for (let i = 0; i < asnLineIds.length; i += ID_CHUNK) {
+        const idsChunk = asnLineIds.slice(i, i + ID_CHUNK);
+        const chunkRows = await fetchAllPaginated<GrLineRow>(
+          `gr_line chunk ${i}`,
+          (from, to) =>
+            sb
+              .from("gr_line")
+              .select("asn_line_id, qty_received, qty")
+              .in("asn_line_id", idsChunk)
+              .order("asn_line_id", { ascending: true })
+              .range(from, to)
+        );
+        grLines.push(...chunkRows);
+      }
+      console.log(`[wms/asn] gr_line: ${grLines.length} rows`);
     }
 
+    // packing_list_header — chunk 조회
     let packingHeaderMap = new Map<string, PackingListHeaderRow>();
     if (packingListIds.length > 0) {
-      const { data: plHeadersRaw, error: plHeaderErr } = await sb
-        .from("packing_list_header")
-        .select("id, pl_no, po_no")
-        .in("id", packingListIds);
-
-      if (plHeaderErr) throw plHeaderErr;
-
-      const plHeaders = (plHeadersRaw ?? []) as PackingListHeaderRow[];
+      const plHeaders = await fetchByIdsChunked<PackingListHeaderRow>(
+        "packing_list_header",
+        packingListIds,
+        ID_CHUNK,
+        (ids) =>
+          sb
+            .from("packing_list_header")
+            .select("id, pl_no, po_no")
+            .in("id", ids)
+      );
       packingHeaderMap = new Map(plHeaders.map((r) => [r.id, r]));
+      console.log(`[wms/asn] packing_list_header: ${plHeaders.length}`);
     }
 
+    // packing_list_lines — chunk + paginate (가장 큰 테이블, line 수 폭발 가능)
     const packingLineMap = new Map<string, PackingListLineRow>();
     if (packingListIds.length > 0) {
-      const plLines = await fetchAllPaginated<PackingListLineRow>((from, to) =>
-        sb
-          .from("packing_list_lines")
-          .select("packing_list_id, line_no, sku, qty, carton_no")
-          .in("packing_list_id", packingListIds)
-          .range(from, to)
-      );
-      for (const row of plLines) {
-        packingLineMap.set(
-          `${row.packing_list_id}::${makePackingLineKey(row.line_no, row.sku)}`,
-          row
+      let plLineCount = 0;
+      for (let i = 0; i < packingListIds.length; i += ID_CHUNK) {
+        const idsChunk = packingListIds.slice(i, i + ID_CHUNK);
+        const chunkRows = await fetchAllPaginated<PackingListLineRow>(
+          `packing_list_lines chunk ${i}`,
+          (from, to) =>
+            sb
+              .from("packing_list_lines")
+              .select("packing_list_id, line_no, sku, qty, carton_no")
+              .in("packing_list_id", idsChunk)
+              .order("packing_list_id", { ascending: true })
+              .range(from, to)
         );
+        for (const row of chunkRows) {
+          packingLineMap.set(
+            `${row.packing_list_id}::${makePackingLineKey(row.line_no, row.sku)}`,
+            row
+          );
+        }
+        plLineCount += chunkRows.length;
       }
+      console.log(`[wms/asn] packing_list_lines: ${plLineCount}`);
     }
 
+    // vendor
     let vendorMap = new Map<string, VendorRow>();
     if (vendorIds.length > 0) {
-      const { data: vendorsRaw } = await sb
-        .from("vendor")
-        .select("id, vendor_code, vendor_name")
-        .in("id", vendorIds);
-
-      const vendors = (vendorsRaw ?? []) as VendorRow[];
+      const vendors = await fetchByIdsChunked<VendorRow>(
+        "vendor",
+        vendorIds,
+        ID_CHUNK,
+        (ids) =>
+          sb.from("vendor").select("id, vendor_code, vendor_name").in("id", ids)
+      );
       vendorMap = new Map(vendors.map((r) => [r.id, r]));
+      console.log(`[wms/asn] vendor: ${vendors.length}`);
     }
 
+    // po_header
     const poIds = Array.from(new Set(headers.map((r) => r.po_id).filter(Boolean))) as string[];
     let poMap = new Map<string, PoHeaderRow>();
     if (poIds.length > 0) {
-      const { data: poRowsRaw } = await sb
-        .from("po_header")
-        .select("id, po_no")
-        .in("id", poIds);
-
-      const poRows = (poRowsRaw ?? []) as PoHeaderRow[];
+      const poRows = await fetchByIdsChunked<PoHeaderRow>(
+        "po_header",
+        poIds,
+        ID_CHUNK,
+        (ids) => sb.from("po_header").select("id, po_no").in("id", ids)
+      );
       poMap = new Map(poRows.map((r) => [r.id, r]));
+      console.log(`[wms/asn] po_header: ${poRows.length}`);
     }
 
     const receivedByAsnLineId = new Map<string, number>();
@@ -312,6 +393,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ ok: true, items });
   } catch (e: any) {
+    console.error("[wms/asn] FATAL:", e?.stack || e?.message || e);
     return NextResponse.json(
       { ok: false, error: e?.message ?? "Failed to load WMS ASN list" },
       { status: 500 }
