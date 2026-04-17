@@ -58,7 +58,9 @@ export async function GET(_req: Request, { params }: Params) {
     };
 
     prev.line_count += 1;
-    prev.qty_expected += n(row.qty_expected ?? row.qty);
+    // qty_expected가 0이면 qty로 fallback (?? 는 0을 유효로 취급)
+    const qExpectedRaw = n(row.qty_expected);
+    prev.qty_expected += qExpectedRaw > 0 ? qExpectedRaw : n(row.qty);
     prev.qty_received += n(row.qty_received);
     if (!prev.created_at && row.created_at) prev.created_at = row.created_at;
 

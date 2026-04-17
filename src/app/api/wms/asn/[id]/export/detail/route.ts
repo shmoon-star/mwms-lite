@@ -50,7 +50,9 @@ export async function GET(_req: Request, { params }: Params) {
   const productMaster = await loadProductsBySkus(skuList, sb);
 
   const rows = (lines || []).map((row: any) => {
-    const expected = n(row.qty_expected ?? row.qty);
+    // qty_expected가 0이면 qty로 fallback (?? 는 0을 유효로 취급)
+    const qExpectedRaw = n(row.qty_expected);
+    const expected = qExpectedRaw > 0 ? qExpectedRaw : n(row.qty);
     const received = n(row.qty_received);
 
     return [

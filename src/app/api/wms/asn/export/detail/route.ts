@@ -9,24 +9,31 @@ function normalizeView(view: string) {
   return "all";
 }
 
+/**
+ * qty_expected가 0일 때 qty로 fallback (?? 는 0을 유효로 취급하므로 > 0 체크 필요)
+ */
 function inferExpected(row: Record<string, any>) {
-  return Number(
-    row.qty_expected ??
-      row.expected_qty ??
-      row.qty ??
-      row.qty_ordered ??
-      row.planned_qty ??
-      0
-  );
+  const candidates = [
+    row.qty_expected,
+    row.expected_qty,
+    row.qty,
+    row.qty_ordered,
+    row.planned_qty,
+  ];
+  for (const v of candidates) {
+    const n = Number(v ?? 0);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
 }
 
 function inferReceived(row: Record<string, any>) {
-  return Number(
-    row.qty_received ??
-      row.received_qty ??
-      row.qty_done ??
-      0
-  );
+  const candidates = [row.qty_received, row.received_qty, row.qty_done];
+  for (const v of candidates) {
+    const n = Number(v ?? 0);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
 }
 
 function deriveAsnStatus(expected: number, received: number) {
