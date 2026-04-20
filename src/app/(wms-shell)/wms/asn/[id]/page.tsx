@@ -8,6 +8,9 @@ type WmsAsnLine = {
   line_no: number | null;
   carton_no: string | null;
   sku: string | null;
+  sku_name?: string | null;
+  brand?: string | null;
+  barcode?: string | null;
   asn_qty: number;
   received_qty: number;
   balance_qty: number;
@@ -68,6 +71,11 @@ export default function WmsAsnDetailPage({
   const [boxFilter, setBoxFilter] = useState("");
   const [expandedCartons, setExpandedCartons] = useState<Record<string, boolean>>({});
   const [showOnlyMix, setShowOnlyMix] = useState(false);
+
+  // Carton Finder (SKU scan) state
+  const [scanInput, setScanInput] = useState("");
+  const [selectedSku, setSelectedSku] = useState<string | null>(null);
+  const [scanError, setScanError] = useState("");
 
   // Key-in quantities per asn_line_id
   const [values, setValues] = useState<Record<string, number>>({});
@@ -221,6 +229,104 @@ export default function WmsAsnDetailPage({
 
     return { cartons, summary };
   }, [detail]);
+
+  // SKU → Carton 역인덱스 (SKU 스캔하면 어느 박스에 몇 개 있는지 빠르게 조회)
+  const skuDirectory = useMemo(() => {
+    const dir = new Map<
+      string,
+      {
+        sku: string;
+        name: string | null;
+        brand: string | null;
+        barcode: string | null;
+        total_qty: number;
+        locations: { carton_no: string; qty: number; is_mix: boolean; sku_count: number }[];
+      }
+    >();
+
+    if (!detail) return dir;
+
+    const cartonMeta = new Map<string, { is_mix: boolean; sku_count: number }>();
+    for (const c of cartonBreakdown.cartons) {
+      cartonMeta.set(c.carton_no, { is_mix: c.type === "MIX", sku_count: c.sku_count });
+    }
+
+    for (const line of detail.lines || []) {
+      const sku = (line.sku || "").trim();
+      const carton = (line.carton_no || "").trim();
+      if (!sku || !carton) continue;
+
+      if (!dir.has(sku)) {
+        dir.set(sku, {
+          sku,
+          name: line.sku_name || null,
+          brand: line.brand || null,
+          barcode: line.barcode || null,
+          total_qty: 0,
+          locations: [],
+        });
+      }
+      const entry = dir.get(sku)!;
+      const qty = safeNum(line.asn_qty);
+      entry.total_qty += qty;
+
+      const meta = cartonMeta.get(carton) || { is_mix: false, sku_count: 1 };
+      const existing = entry.locations.find((loc) => loc.carton_no === carton);
+      if (existing) {
+        existing.qty += qty;
+      } else {
+        entry.locations.push({
+          carton_no: carton,
+          qty,
+          is_mix: meta.is_mix,
+          sku_count: meta.sku_count,
+        });
+      }
+    }
+
+    // sort locations by qty DESC
+    for (const entry of dir.values()) {
+      entry.locations.sort((a, b) => b.qty - a.qty);
+    }
+
+    return dir;
+  }, [detail, cartonBreakdown]);
+
+  const selectedSkuInfo = useMemo(() => {
+    if (!selectedSku) return null;
+    return skuDirectory.get(selectedSku) || null;
+  }, [selectedSku, skuDirectory]);
+
+  function handleScanSubmit() {
+    const q = scanInput.trim();
+    if (!q) return;
+    setScanError("");
+
+    // 1. SKU exact match
+    if (skuDirectory.has(q)) {
+      setSelectedSku(q);
+      setScanInput("");
+      return;
+    }
+
+    // 2. barcode match (products.barcode 필드로 들어온 경우)
+    for (const [sku, info] of skuDirectory.entries()) {
+      if (info.barcode && info.barcode === q) {
+        setSelectedSku(sku);
+        setScanInput("");
+        return;
+      }
+    }
+
+    setScanError(`"${q}" — 현재 ASN에서 찾을 수 없습니다.`);
+    setSelectedSku(null);
+  }
+
+  function handleOpenLabels() {
+    if (!selectedSku || !asnId) return;
+    const url = `/wms/asn/${asnId}/picking-labels?sku=${encodeURIComponent(selectedSku)}`;
+    window.open(url, "_blank");
+  }
 
   // Lines where keyin qty ≠ asn_qty → need a reason
   const mismatchedLineIds = useMemo(() => {
@@ -519,6 +625,134 @@ export default function WmsAsnDetailPage({
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Carton Finder — SKU 스캔 → 어느 박스에 몇 개 있는지 조회 */}
+          {skuDirectory.size > 0 && (
+            <div className="border rounded bg-white overflow-hidden">
+              <div className="px-4 py-3 border-b">
+                <div className="font-medium">📍 Carton Finder (SKU 위치 조회)</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  SKU 바코드 스캔 또는 입력 후 Enter — 해당 SKU가 들어있는 박스 목록 (qty DESC)
+                </div>
+              </div>
+
+              <div className="px-4 py-3 border-b bg-gray-50">
+                <div className="flex gap-2 flex-wrap items-center">
+                  <input
+                    type="text"
+                    value={scanInput}
+                    onChange={(e) => setScanInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleScanSubmit();
+                      }
+                    }}
+                    placeholder="바코드 스캔 또는 SKU 입력"
+                    className="flex-1 min-w-[240px] border rounded px-3 py-2 text-sm font-mono"
+                    autoFocus={false}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleScanSubmit}
+                    className="px-4 py-2 rounded border bg-white hover:bg-gray-100 text-sm"
+                  >
+                    조회
+                  </button>
+                  {selectedSku && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedSku(null);
+                        setScanInput("");
+                        setScanError("");
+                      }}
+                      className="px-3 py-2 rounded border bg-white hover:bg-gray-100 text-sm text-gray-600"
+                    >
+                      초기화
+                    </button>
+                  )}
+                </div>
+                {scanError && (
+                  <div className="mt-2 text-xs text-red-600">{scanError}</div>
+                )}
+              </div>
+
+              {selectedSkuInfo && (
+                <div>
+                  {/* SKU 정보 헤더 */}
+                  <div className="px-4 py-3 border-b bg-white flex items-start justify-between flex-wrap gap-3">
+                    <div>
+                      <div className="font-mono text-base font-semibold">{selectedSkuInfo.sku}</div>
+                      {(selectedSkuInfo.name || selectedSkuInfo.brand) && (
+                        <div className="text-sm text-gray-700 mt-0.5">
+                          {selectedSkuInfo.name || ""}
+                          {selectedSkuInfo.brand ? (
+                            <span className="text-gray-500 ml-2">({selectedSkuInfo.brand})</span>
+                          ) : null}
+                        </div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-1">
+                        총 <b className="text-gray-900">{selectedSkuInfo.total_qty}개</b> / {selectedSkuInfo.locations.length}개 박스에 분산
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenLabels}
+                      className="px-4 py-2 rounded border bg-black text-white hover:bg-gray-800 text-sm"
+                    >
+                      🖨️ 전체 라벨 출력 ({selectedSkuInfo.locations.length}장)
+                    </button>
+                  </div>
+
+                  {/* 박스별 분포 */}
+                  <div className="overflow-auto max-h-[360px]">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-600 sticky top-0">
+                        <tr>
+                          <th className="text-left px-4 py-2 border-b w-24">Type</th>
+                          <th className="text-left px-4 py-2 border-b">Carton No</th>
+                          <th className="text-right px-4 py-2 border-b w-28">이 박스 Qty</th>
+                          <th className="text-right px-4 py-2 border-b w-32">박스 내 SKU 종류</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSkuInfo.locations.map((loc) => (
+                          <tr key={loc.carton_no} className={`border-b ${loc.is_mix ? "bg-orange-50/40" : ""}`}>
+                            <td className="px-4 py-2">
+                              {loc.is_mix ? (
+                                <span className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-200 font-semibold">
+                                  🟠 MIX
+                                </span>
+                              ) : (
+                                <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-800 border border-green-200 font-semibold">
+                                  🟢 SINGLE
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 font-mono text-xs">{loc.carton_no}</td>
+                            <td className="px-4 py-2 text-right font-semibold">{loc.qty}</td>
+                            <td className="px-4 py-2 text-right text-gray-600">
+                              {loc.is_mix ? `${loc.sku_count}종` : "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-gray-50 font-semibold">
+                          <td className="px-4 py-2" colSpan={2}>
+                            총계
+                          </td>
+                          <td className="px-4 py-2 text-right">{selectedSkuInfo.total_qty}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

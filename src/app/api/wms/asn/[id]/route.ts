@@ -127,10 +127,12 @@ export async function GET(_req: Request, { params }: Params) {
       new Set(lineRows.map((row: any) => row.sku).filter(Boolean))
     );
 
+    const productMap = new Map<string, { sku: string; name: string | null; brand: string | null; barcode: string | null }>();
+
     if (skuList.length > 0) {
-      const { error: productError } = await sb
+      const { data: productData, error: productError } = await sb
         .from("products")
-        .select("sku, name, brand")
+        .select("sku, name, brand, barcode")
         .in("sku", skuList);
 
       if (productError) {
@@ -138,6 +140,10 @@ export async function GET(_req: Request, { params }: Params) {
           { ok: false, error: productError.message },
           { status: 500 }
         );
+      }
+
+      for (const p of productData || []) {
+        if (p.sku) productMap.set(p.sku, p);
       }
     }
 
@@ -222,11 +228,16 @@ const expected = n(
 
       const received = n(row.qty_received ?? row.received_qty);
 
+      const product = row.sku ? productMap.get(row.sku) : null;
+
       return {
         asn_line_id: String(row.id),
         line_no: row.line_no ?? null,
         carton_no: row.carton_no || "",
         sku: row.sku || "",
+        sku_name: product?.name || null,
+        brand: product?.brand || null,
+        barcode: product?.barcode || null,
         asn_qty: expected,
         received_qty: received,
         balance_qty: Math.max(expected - received, 0),
