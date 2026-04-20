@@ -42,17 +42,17 @@ function Barcode({ value }: { value: string }) {
     try {
       JsBarcode(ref.current, value, {
         format: "CODE128",
-        width: 2,
-        height: 60,
+        width: 1.8,
+        height: 50,
         displayValue: false,
         margin: 0,
       });
     } catch {
-      // fallback silent — 잘못된 값이면 빈 svg로 남음
+      /* silent fallback */
     }
   }, [value]);
 
-  return <svg ref={ref} />;
+  return <svg ref={ref} style={{ maxWidth: "100%", height: "auto" }} />;
 }
 
 export default function PickingLabelsClient({
@@ -91,7 +91,6 @@ export default function PickingLabelsClient({
   const skuInfo = useMemo(() => {
     if (!detail || !sku) return null;
 
-    // Carton별 SKU 종류 수 집계 (MIX 여부 판정용)
     const cartonSkuCount = new Map<string, Set<string>>();
     for (const line of detail.lines) {
       const carton = (line.carton_no || "").trim();
@@ -101,7 +100,6 @@ export default function PickingLabelsClient({
       cartonSkuCount.get(carton)!.add(s);
     }
 
-    // 해당 SKU의 location 집계
     const locMap = new Map<string, number>();
     let totalQty = 0;
     let skuName: string | null = null;
@@ -143,7 +141,6 @@ export default function PickingLabelsClient({
     };
   }, [detail, sku]);
 
-  // 자동 프린트 (바코드 렌더링 후 약간 대기)
   useEffect(() => {
     if (loading || !skuInfo || skuInfo.locations.length === 0) return;
     const t = setTimeout(() => {
@@ -176,11 +173,24 @@ export default function PickingLabelsClient({
           size: 100mm 200mm;
           margin: 0;
         }
+
         @media print {
-          body {
-            margin: 0;
-            padding: 0;
-            background: white;
+          /* 프린트 시 사이드바/헤더 등 모든 것 숨기고 라벨만 표시 */
+          body * {
+            visibility: hidden !important;
+          }
+          .picking-labels-root,
+          .picking-labels-root * {
+            visibility: visible !important;
+          }
+          .picking-labels-root {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
           }
           .no-print {
             display: none !important;
@@ -188,122 +198,259 @@ export default function PickingLabelsClient({
           .label-page {
             page-break-after: always;
             break-after: page;
+            box-shadow: none !important;
           }
           .label-page:last-child {
             page-break-after: auto;
             break-after: auto;
           }
+          html,
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
         }
+
         .label-page {
           width: 100mm;
           height: 200mm;
-          padding: 6mm;
           box-sizing: border-box;
+          padding: 6mm;
           display: flex;
           flex-direction: column;
           gap: 4mm;
           font-family: -apple-system, "Segoe UI", Arial, sans-serif;
-          color: #111;
+          color: #000;
+          background: white;
+        }
+
+        .label-barcode-row {
+          text-align: center;
+          padding-bottom: 3mm;
+          border-bottom: 1px solid #ccc;
+        }
+        .label-barcode-row svg {
+          max-width: 100%;
+          height: 22mm;
+        }
+        .label-sku-text {
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 9pt;
+          letter-spacing: 0.5px;
+          margin-top: 1.5mm;
+          word-break: break-all;
+          line-height: 1.1;
+        }
+
+        .label-product-row {
+          min-height: 14mm;
+          padding-bottom: 3mm;
+          border-bottom: 1px dashed #ddd;
+        }
+        .label-product-name {
+          font-size: 11pt;
+          font-weight: 500;
+          line-height: 1.25;
+        }
+        .label-brand {
+          font-size: 8pt;
+          color: #555;
+          margin-top: 1mm;
+        }
+
+        .label-body {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+
+        .label-field-label {
+          font-size: 7pt;
+          color: #666;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+          font-weight: 600;
+        }
+
+        .label-carton-value {
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 20pt;
+          font-weight: 700;
+          line-height: 1.1;
+          margin-top: 1mm;
+          word-break: break-all;
+        }
+
+        .label-qty-row {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 2mm;
+          margin-top: 2mm;
+        }
+
+        .label-qty-value {
+          font-size: 54pt;
+          font-weight: 900;
+          line-height: 1;
+        }
+
+        .label-mix-tag {
+          display: inline-block;
+          font-size: 9pt;
+          padding: 1mm 2.2mm;
+          border: 1px solid #9a3412;
+          color: #9a3412;
+          background: #fff7ed;
+          border-radius: 2px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+        }
+        .label-single-tag {
+          display: inline-block;
+          font-size: 9pt;
+          padding: 1mm 2.2mm;
+          border: 1px solid #166534;
+          color: #166534;
+          background: #f0fdf4;
+          border-radius: 2px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+        }
+
+        .label-footer {
+          font-size: 7pt;
+          color: #888;
+          display: flex;
+          justify-content: space-between;
+          padding-top: 2mm;
+          border-top: 1px solid #eee;
         }
       `}</style>
 
-      {/* 화면 전용 컨트롤바 — 프린트 시 숨김 */}
-      <div className="no-print bg-gray-900 text-white px-6 py-3 flex items-center justify-between">
+      {/* 화면 전용 컨트롤바 */}
+      <div
+        className="no-print"
+        style={{
+          background: "#111",
+          color: "#fff",
+          padding: "10px 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
         <div>
-          <div className="text-sm font-semibold">
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
             Picking Labels — {skuInfo.sku}
           </div>
-          <div className="text-xs text-gray-300 mt-0.5">
-            {detail?.asn_no} / 총 {skuInfo.locations.length}장 / 합계 {skuInfo.total_qty}개
+          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
+            {detail?.asn_no} / {skuInfo.locations.length}장 / 합계 {skuInfo.total_qty}개
           </div>
         </div>
-        <div className="flex gap-2">
+        <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
             onClick={() => window.print()}
-            className="px-4 py-1.5 rounded bg-white text-black text-sm font-medium hover:bg-gray-200"
+            style={{
+              padding: "6px 14px",
+              borderRadius: 4,
+              background: "#fff",
+              color: "#000",
+              fontSize: 13,
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+            }}
           >
             🖨️ 다시 프린트
           </button>
           <button
             type="button"
             onClick={() => window.close()}
-            className="px-4 py-1.5 rounded border border-gray-600 text-sm hover:bg-gray-800"
+            style={{
+              padding: "6px 14px",
+              borderRadius: 4,
+              background: "transparent",
+              color: "#fff",
+              fontSize: 13,
+              border: "1px solid #555",
+              cursor: "pointer",
+            }}
           >
             닫기
           </button>
         </div>
       </div>
 
-      {/* 라벨들 */}
-      <div className="bg-gray-200 py-6 flex flex-col items-center gap-4 print:bg-white print:py-0 print:gap-0">
+      {/* 라벨 영역 (프린트 대상) */}
+      <div
+        className="picking-labels-root"
+        style={{
+          background: "#e5e7eb",
+          padding: "20px 0",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "12px",
+        }}
+      >
         {skuInfo.locations.map((loc, idx) => (
           <div
             key={loc.carton_no}
-            className="label-page bg-white shadow print:shadow-none"
+            className="label-page"
+            style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}
           >
-            {/* 바코드 */}
-            <div className="flex flex-col items-center border-b border-gray-300 pb-2">
+            {/* 상단: 바코드 */}
+            <div className="label-barcode-row">
               <Barcode value={skuInfo.barcode} />
-              <div className="text-[10pt] font-mono mt-1 tracking-wider">
-                {skuInfo.barcode}
-              </div>
+              <div className="label-sku-text">{skuInfo.sku}</div>
             </div>
 
-            {/* 상품 정보 */}
-            <div className="flex-none">
-              <div className="text-[9pt] text-gray-500 uppercase">SKU</div>
-              <div className="text-[14pt] font-bold font-mono leading-tight break-all">
-                {skuInfo.sku}
+            {/* 상품 정보 (있을 때만) */}
+            {(skuInfo.name || skuInfo.brand) && (
+              <div className="label-product-row">
+                {skuInfo.name && (
+                  <div className="label-product-name">{skuInfo.name}</div>
+                )}
+                {skuInfo.brand && (
+                  <div className="label-brand">{skuInfo.brand}</div>
+                )}
               </div>
-              {skuInfo.name && (
-                <div className="text-[11pt] mt-1 leading-snug">{skuInfo.name}</div>
-              )}
-              {skuInfo.brand && (
-                <div className="text-[9pt] text-gray-600 mt-0.5">{skuInfo.brand}</div>
-              )}
-            </div>
+            )}
 
-            <div className="flex-1" />
-
-            {/* Picking 정보 */}
-            <div className="border-t-2 border-black pt-2">
-              <div className="flex justify-between items-baseline mb-1">
-                <div className="text-[9pt] text-gray-500 uppercase">Carton</div>
-                <div>
-                  {loc.is_mix ? (
-                    <span className="text-[9pt] px-2 py-0.5 rounded bg-orange-100 text-orange-800 border border-orange-300 font-semibold">
-                      MIX {loc.sku_count}종
-                    </span>
-                  ) : (
-                    <span className="text-[9pt] px-2 py-0.5 rounded bg-green-100 text-green-800 border border-green-300 font-semibold">
-                      SINGLE
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="text-[16pt] font-bold font-mono leading-tight">
-                {loc.carton_no}
+            {/* 본문: Carton / Qty */}
+            <div className="label-body">
+              <div>
+                <div className="label-field-label">Carton</div>
+                <div className="label-carton-value">{loc.carton_no}</div>
               </div>
 
-              <div className="mt-2 flex justify-between items-end">
-                <div>
-                  <div className="text-[9pt] text-gray-500 uppercase">Pick Qty</div>
-                  <div className="text-[28pt] font-black leading-none">
-                    {loc.qty}
+              <div>
+                <div className="label-qty-row">
+                  <div>
+                    <div className="label-field-label">Pick Qty</div>
+                    <div className="label-qty-value">{loc.qty}</div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[8pt] text-gray-500">of {skuInfo.total_qty} total</div>
-                  <div className="text-[8pt] text-gray-500 mt-0.5">
-                    {idx + 1} / {skuInfo.locations.length}
+                  <div>
+                    {loc.is_mix ? (
+                      <span className="label-mix-tag">MIX {loc.sku_count}종</span>
+                    ) : (
+                      <span className="label-single-tag">SINGLE</span>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="text-[7pt] text-gray-400 text-center border-t border-gray-200 pt-1">
-              ASN: {detail?.asn_no || "-"} · PO: {detail?.po_no || "-"}
+            {/* 하단: ASN/페이지 */}
+            <div className="label-footer">
+              <span>{detail?.asn_no || "-"}</span>
+              <span>
+                {idx + 1}/{skuInfo.locations.length} · 합계 {skuInfo.total_qty}
+              </span>
             </div>
           </div>
         ))}
