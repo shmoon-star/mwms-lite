@@ -703,7 +703,7 @@ export default function WmsAsnDetailPage({
                       onClick={handleOpenLabels}
                       className="px-4 py-2 rounded border bg-black text-white hover:bg-gray-800 text-sm"
                     >
-                      🖨️ 전체 라벨 출력 ({selectedSkuInfo.locations.length}장)
+                      🖨️ 피킹 라벨 출력 (1장)
                     </button>
                   </div>
 
