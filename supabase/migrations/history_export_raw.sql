@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS history_export_raw (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- 식별자 (UPSERT 키)
-  row_key text UNIQUE NOT NULL,  -- invoice_no + bl_no + style_color_size_code 조합 해시
+  -- sha1(invoice_no || '|' || bl_no || '|' || style_color_size_code)[:32]
+  -- (같은 SKU line은 이 셋만으로 유일하다고 확정 — 2026-04-21)
+  row_key text UNIQUE NOT NULL,
 
   -- 시즌/상태
   order_season text,              -- 25fw / 26ss

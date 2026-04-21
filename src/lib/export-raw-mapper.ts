@@ -9,8 +9,10 @@ export function mapExportRow(r: Record<string, any>, rowNumber: number) {
   const blNo = toStr(r["BL 번호"]);
   const skuCode = toStr(r["Style-Color-Size Code"]);
 
-  // UPSERT key: invoice + bl + sku 조합 해시 (유니크 보장)
-  const keyInput = `${invoiceNo || ""}|${blNo || ""}|${skuCode || ""}|${rowNumber}`;
+  // UPSERT key: invoice + bl + sku 조합 해시
+  // (이전에는 rowNumber까지 포함했는데, Google Sheet에서 같은 SKU의 row 번호가
+  //  바뀔 때마다 새 row로 누적 저장되어 중복이 쌓이는 문제가 있었음. 2026-04-21 수정)
+  const keyInput = `${invoiceNo || ""}|${blNo || ""}|${skuCode || ""}`;
   const rowKey = crypto.createHash("sha1").update(keyInput).digest("hex").slice(0, 32);
 
   return {
