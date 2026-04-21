@@ -35,19 +35,23 @@ export async function GET(req: NextRequest) {
     }
 
     // === Summary ===
+    // "실 선적" 지표들은 모두 "CN창고 입고 완료" 상태만 카운트 (실제 도착 완료분)
+    const SHIPPED_STATUS = "CN창고 입고 완료";
+    const isShipped = (d: any) => d.shipment_status === SHIPPED_STATUS;
     const summary = {
       total_rows: data.length,
       total_ordered: data.reduce((s, d) => s + (d.qty_ordered || 0), 0),
-      total_shipped: data.reduce((s, d) => s + (d.qty_shipped || 0), 0),
-      total_amount: data.reduce((s, d) => s + (Number(d.invoice_amount) || 0), 0),
-      unique_brands: new Set(data.map(d => d.brand_name).filter(Boolean)).size,
-      unique_bl: new Set(data.map(d => d.bl_no).filter(Boolean)).size,
+      total_shipped: data.reduce((s, d) => s + (isShipped(d) ? (d.qty_shipped || 0) : 0), 0),
+      total_amount: data.reduce((s, d) => s + (isShipped(d) ? (Number(d.invoice_amount) || 0) : 0), 0),
+      unique_brands: new Set(data.filter(isShipped).map(d => d.brand_name).filter(Boolean)).size,
+      unique_bl: new Set(data.filter(isShipped).map(d => d.bl_no).filter(Boolean)).size,
     };
 
-    // === 월별 DC 출고 (dc_outbound_date 기준) ===
+    // === 월별 DC 출고 (dc_outbound_date 기준, CN창고 입고 완료분만) ===
     const monthlyMap = new Map<string, { year_month: string; qty_shipped: number; row_count: number }>();
     for (const d of data) {
       if (!d.dc_outbound_date) continue;
+      if (!isShipped(d)) continue;
       const ym = String(d.dc_outbound_date).slice(0, 7);
       if (!monthlyMap.has(ym)) monthlyMap.set(ym, { year_month: ym, qty_shipped: 0, row_count: 0 });
       const e = monthlyMap.get(ym)!;
@@ -56,10 +60,11 @@ export async function GET(req: NextRequest) {
     }
     const monthly = Array.from(monthlyMap.values()).sort((a, b) => a.year_month.localeCompare(b.year_month));
 
-    // === 브랜드별 (Top 20, 실 선적 수량 기준) ===
+    // === 브랜드별 (Top 20, 실 선적 수량 기준, CN창고 입고 완료분만) ===
     const brandMap = new Map<string, { brand: string; qty_shipped: number; qty_ordered: number }>();
     for (const d of data) {
       if (!d.brand_name) continue;
+      if (!isShipped(d)) continue;
       if (!brandMap.has(d.brand_name)) brandMap.set(d.brand_name, { brand: d.brand_name, qty_shipped: 0, qty_ordered: 0 });
       const e = brandMap.get(d.brand_name)!;
       e.qty_shipped += d.qty_shipped || 0;
