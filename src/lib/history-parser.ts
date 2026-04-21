@@ -107,18 +107,28 @@ export function parseHistoryExcel(
   const documents: HistoryDocRow[] = [];
   const settlements: HistorySettlementRow[] = [];
 
+  // sku → vendor_code 매핑 (PO 시트에서 구축, DN/Shipment에서 lookup)
+  // Shipment 원본에는 vendor_code가 없으므로 sku 기반으로 역추적해서 주입.
+  // 같은 sku는 일반적으로 한 벤더에만 속하므로 첫 match만 사용.
+  const skuToVendor = new Map<string, string>();
+
   // === PO 시트 ===
   const poRows = readSheet(wb, ["PO", "po"]);
   for (const r of poRows) {
     const date = excelDateToISO(r.po_date || r.date || r.PO_Date);
+    const sku = str(r.sku || r.SKU);
+    const vendor = str(r.vendor_code || r.Vendor_Code || r.vendor);
+    if (sku && vendor && !skuToVendor.has(sku)) {
+      skuToVendor.set(sku, vendor);
+    }
     documents.push({
       doc_type: "PO",
       doc_no: str(r.po_no || r.PO_No),
       doc_date: date,
       year_month: yearMonth(date),
-      vendor_code: str(r.vendor_code || r.Vendor_Code || r.vendor),
+      vendor_code: vendor,
       buyer_code: null,
-      sku: str(r.sku || r.SKU),
+      sku,
       description: str(r.description || r.Description || r.desc),
       qty: num(r.qty || r.Qty || r.quantity),
       unit_price: num(r.unit_price || r.UnitPrice) || null,
@@ -136,14 +146,15 @@ export function parseHistoryExcel(
   const dnRows = readSheet(wb, ["DN", "dn"]);
   for (const r of dnRows) {
     const date = excelDateToISO(r.dn_date || r.date || r.DN_Date);
+    const sku = str(r.sku || r.SKU);
     documents.push({
       doc_type: "DN",
       doc_no: str(r.dn_no || r.DN_No),
       doc_date: date,
       year_month: yearMonth(date),
-      vendor_code: null,
+      vendor_code: sku ? skuToVendor.get(sku) || null : null,
       buyer_code: str(r.buyer_code || r.Buyer_Code || r.buyer || r.ship_to),
-      sku: str(r.sku || r.SKU),
+      sku,
       description: str(r.description || r.Description),
       qty: num(r.qty || r.Qty || r.quantity),
       unit_price: null,
@@ -163,14 +174,16 @@ export function parseHistoryExcel(
   for (const r of shipRows) {
     const date = excelDateToISO(r.ship_date || r.date || r.Ship_Date);
     const shipDnNo = str(r.dn_no || r.DN_No || r.DN_NO);
+    const sku = str(r.sku || r.SKU);
     documents.push({
       doc_type: "SHIPMENT",
       doc_no: str(r.shipment_no || r.Shipment_No),
       doc_date: date,
       year_month: yearMonth(date),
-      vendor_code: null,
+      // Shipment 시트엔 vendor_code가 없어서 sku → PO vendor 역추적으로 채움
+      vendor_code: sku ? skuToVendor.get(sku) || null : null,
       buyer_code: str(r.buyer_code || r.Buyer_Code || r.buyer),
-      sku: str(r.sku || r.SKU),
+      sku,
       description: str(r.description || r.Description),
       qty: num(r.qty || r.Qty),
       unit_price: null, amount: null, currency: null,

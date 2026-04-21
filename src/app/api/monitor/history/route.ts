@@ -147,25 +147,74 @@ export async function GET(req: NextRequest) {
     }
     const monthly = Array.from(monthlyMap.values()).sort((a, b) => a.year_month.localeCompare(b.year_month));
 
-    // === 바이어별 월별 출고량 (SHIPMENT 기준) ===
-    const buyerMonthlyMap = new Map<string, Map<string, number>>();
+    // === 브랜드(벤더)별 월별 출고량 (SHIPMENT 기준) ===
+    // vendor_code 기준으로 집계 — CN에선 Shipment buyer_code가 실제 브랜드지만
+    // JP에선 buyer_code가 "MUSINSA-JP" 법인 하나뿐이라 의미 없음. vendor 기준이
+    // 도메인적으로 일관됨. vendor_code가 없으면 buyer_code fallback.
+    const buyerMonthlyMap = new Map<
+      string,
+      { key: string; vendor_code: string | null; buyer_code: string | null; months: Map<string, number> }
+    >();
     for (const d of documents) {
       if (d.doc_type !== "SHIPMENT") continue;
       const ym = d.year_month || (d.doc_date ? String(d.doc_date).slice(0, 7) : null);
       if (!ym) continue;
-      const buyer = d.buyer_code || "UNKNOWN";
-      if (!buyerMonthlyMap.has(buyer)) buyerMonthlyMap.set(buyer, new Map());
-      const m = buyerMonthlyMap.get(buyer)!;
-      m.set(ym, (m.get(ym) || 0) + Number(d.qty || 0));
+      const vendorCode = d.vendor_code as string | null;
+      const buyerCode = d.buyer_code as string | null;
+      const key = vendorCode || buyerCode || "UNKNOWN";
+      if (!buyerMonthlyMap.has(key)) {
+        buyerMonthlyMap.set(key, {
+          key,
+          vendor_code: vendorCode,
+          buyer_code: buyerCode,
+          months: new Map(),
+        });
+      }
+      const entry = buyerMonthlyMap.get(key)!;
+      entry.months.set(ym, (entry.months.get(ym) || 0) + Number(d.qty || 0));
     }
     const allMonths = Array.from(new Set(monthly.map(m => m.year_month))).sort();
-    // Top 20 바이어만 (총 출고량 기준)
-    const buyerMonthly = Array.from(buyerMonthlyMap.entries())
-      .map(([buyer, m]) => {
-        const row: any = { buyer_code: buyer };
+
+    // vendor 테이블 조회 → vendor_code → vendor_name 매핑
+    const vendorCodes = Array.from(
+      new Set(
+        Array.from(buyerMonthlyMap.values())
+          .map(e => e.vendor_code)
+          .filter(Boolean) as string[]
+      )
+    );
+    const vendorNameMap = new Map<string, string>();
+    if (vendorCodes.length > 0) {
+      const { data: vendorRows } = await sb
+        .from("vendor")
+        .select("*")
+        .in("vendor_code", vendorCodes);
+      for (const v of vendorRows || []) {
+        const code = (v as any).vendor_code || (v as any).code;
+        const name = (v as any).vendor_name || (v as any).name;
+        if (code && name) vendorNameMap.set(code, name);
+      }
+    }
+
+    // Top 20 (총 출고량 기준)
+    const buyerMonthly = Array.from(buyerMonthlyMap.values())
+      .map(entry => {
+        const row: any = {
+          vendor_code: entry.vendor_code,
+          vendor_name: entry.vendor_code
+            ? vendorNameMap.get(entry.vendor_code) || null
+            : null,
+          buyer_code: entry.buyer_code,
+          // 화면에 표시할 기본 라벨: vendor_name > vendor_code > buyer_code
+          display_label:
+            (entry.vendor_code && vendorNameMap.get(entry.vendor_code)) ||
+            entry.vendor_code ||
+            entry.buyer_code ||
+            "UNKNOWN",
+        };
         let total = 0;
         for (const ym of allMonths) {
-          const v = m.get(ym) || 0;
+          const v = entry.months.get(ym) || 0;
           row[ym] = v;
           total += v;
         }

@@ -207,11 +207,6 @@ export default function HistoryPage() {
           }`}
         >
           🌐 전체
-          {data?.buCounts && Object.keys(data.buCounts).length > 0 && (
-            <span className="ml-1.5 text-xs text-gray-400">
-              ({Object.keys(data.buCounts).join(" + ")})
-            </span>
-          )}
         </button>
         {BU_OPTIONS.map(b => (
           <button
@@ -292,12 +287,12 @@ export default function HistoryPage() {
         </ResponsiveContainer>
       </div>
 
-      {/* 바이어별 월별 출고 — Top 20 */}
+      {/* 브랜드(벤더)별 월별 출고 — Top 20 */}
       <div className="rounded-xl border p-4">
         <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-lg font-semibold">바이어별 월별 출고량 (Shipment Qty)</h2>
+          <h2 className="text-lg font-semibold">브랜드(벤더)별 월별 출고량 (Shipment Qty)</h2>
           <p className="text-xs text-gray-500">
-            Top 20 (총 출고량 기준) · 전체 {fmtNum(data.buyerCountTotal || 0)}개 바이어 중
+            Top 20 (총 출고량 기준) · 전체 {fmtNum(data.buyerCountTotal || 0)}개 브랜드 중
           </p>
         </div>
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
@@ -305,7 +300,7 @@ export default function HistoryPage() {
             <thead className="bg-gray-50 sticky top-0">
               <tr>
                 <th className="px-3 py-2 text-left w-10">#</th>
-                <th className="px-3 py-2 text-left">Buyer</th>
+                <th className="px-3 py-2 text-left">브랜드 / 벤더</th>
                 {data.allMonths.map(m => <th key={m} className="px-3 py-2 text-right">{m}</th>)}
                 <th className="px-3 py-2 text-right font-bold">Total</th>
               </tr>
@@ -313,10 +308,18 @@ export default function HistoryPage() {
             <tbody>
               {data.buyerMonthly.map((row: any, i: number) => {
                 const total = row._total ?? data.allMonths.reduce((s, m) => s + (row[m] || 0), 0);
+                const label = row.display_label || row.vendor_name || row.vendor_code || row.buyer_code || "—";
+                const sub = row.vendor_code && row.vendor_name ? row.vendor_code : null;
+                const rowKey = `${row.vendor_code || ""}::${row.buyer_code || ""}::${i}`;
                 return (
-                  <tr key={row.buyer_code} className="border-t hover:bg-gray-50">
+                  <tr key={rowKey} className="border-t hover:bg-gray-50">
                     <td className="px-3 py-2 text-gray-400 font-mono">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium">{row.buyer_code}</td>
+                    <td className="px-3 py-2 font-medium">
+                      {label}
+                      {sub && (
+                        <span className="ml-1.5 text-xs text-gray-400 font-normal">({sub})</span>
+                      )}
+                    </td>
                     {data.allMonths.map(m => (
                       <td key={m} className="px-3 py-2 text-right">{fmtNum(row[m] || 0)}</td>
                     ))}
