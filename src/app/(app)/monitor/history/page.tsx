@@ -45,7 +45,7 @@ type HistoryData = {
   leadTime: { year_month: string; avg_days: number }[];
   allocations: Allocation[];
   allMonths: string[];
-  shipmentByContainer: { container: string; count: number }[];
+  shipmentByContainer: { container: string; count: number; qty: number }[];
 };
 
 const BU_OPTIONS = [
@@ -242,7 +242,9 @@ export default function HistoryPage() {
               {data.shipmentByContainer.map((c) => (
                 <div key={c.container} className="flex items-center justify-between text-[11px]">
                   <span className="text-gray-600">{c.container}</span>
-                  <span className="font-semibold text-gray-800">{c.count}</span>
+                  <span className="font-semibold text-gray-800">
+                    {fmtNum(c.count)} / {fmtNum(c.qty)}
+                  </span>
                 </div>
               ))}
             </div>

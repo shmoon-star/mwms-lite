@@ -109,8 +109,20 @@ export async function GET(req: NextRequest) {
     for (const c of shipmentContainerMap.values()) {
       containerCountMap.set(c, (containerCountMap.get(c) || 0) + 1);
     }
+    // 컨테이너 타입별 qty 합산 — SHIPMENT 모든 row의 qty를 해당 shipment의 container로 귀속
+    const containerQtyMap = new Map<string, number>();
+    for (const d of documents) {
+      if (d.doc_type !== "SHIPMENT") continue;
+      if (!d.doc_no) continue;
+      const container = shipmentContainerMap.get(String(d.doc_no)) || "(미지정)";
+      containerQtyMap.set(container, (containerQtyMap.get(container) || 0) + (d.qty || 0));
+    }
     const shipmentByContainer = Array.from(containerCountMap.entries())
-      .map(([container, count]) => ({ container, count }))
+      .map(([container, count]) => ({
+        container,
+        count,
+        qty: containerQtyMap.get(container) || 0,
+      }))
       .sort((a, b) => b.count - a.count);
 
     const summary = {

@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(curl -sS -i -X POST https://sandbox.freightos.com/api/v1/freightEstimates -H 'Content-Type: application/json' -d '{\"load\":[{\"quantity\":1,\"unitType\":\"boxes\",\"unitWeightKg\":1000,\"unitVolumeCBM\":0.05}],\"legs\":[{\"origin\":{\"unLocationCode\":\"USLAX\"},\"destination\":{\"unLocationCode\":\"CNSHA\"}}]}')"
     ]
   }
 }
