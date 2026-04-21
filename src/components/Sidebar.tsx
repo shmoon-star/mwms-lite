@@ -50,6 +50,7 @@ const groups = [
     label: "Extra",
     items: [
       { href: "/analytics/wms-dashboard", label: "WMS Daily", sub: "입출고 대시보드" },
+      { href: "/tools/freight-estimator", label: "Freight Rates", sub: "Freightos 운임 견적" },
     ],
   },
   {
