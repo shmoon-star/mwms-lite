@@ -36,8 +36,11 @@ export async function GET(req: NextRequest) {
 
     // === Summary ===
     // "실 선적" 지표들은 모두 "CN창고 입고 완료" 상태만 카운트 (실제 도착 완료분)
-    const SHIPPED_STATUS = "CN창고 입고 완료";
-    const isShipped = (d: any) => d.shipment_status === SHIPPED_STATUS;
+    // Google Sheet 원본 값의 공백 변형(CN창고/CN 창고, 입고/입 고 등)을 흡수하기 위해
+    // 공백 제거 후 비교한다.
+    const normalizeStatus = (s: any): string => String(s ?? "").replace(/\s+/g, "");
+    const SHIPPED_STATUS_NORM = normalizeStatus("CN창고입고완료");
+    const isShipped = (d: any) => normalizeStatus(d.shipment_status) === SHIPPED_STATUS_NORM;
     const summary = {
       total_rows: data.length,
       total_ordered: data.reduce((s, d) => s + (d.qty_ordered || 0), 0),
