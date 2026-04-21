@@ -27,7 +27,10 @@ export async function GET(req: NextRequest) {
         let q = sb
           .from("history_document")
           .select("*")
-          .order("doc_date", { ascending: true })
+          // tie-breaker `id` 필수 — 같은 doc_date row가 많을 때 페이지 경계에서
+          // 중복/누락 발생하던 버그 수정
+          .order("doc_date", { ascending: true, nullsFirst: false })
+          .order("id", { ascending: true })
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
         if (bu) q = q.eq("business_unit", bu);
         const { data, error } = await q;
@@ -48,6 +51,7 @@ export async function GET(req: NextRequest) {
           .from("history_settlement")
           .select("*")
           .order("year_month", { ascending: true })
+          .order("id", { ascending: true })  // tie-breaker
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
         if (bu) q = q.eq("business_unit", bu);
         const { data, error } = await q;
