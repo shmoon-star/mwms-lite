@@ -35,6 +35,8 @@ type Allocation = {
 };
 
 type HistoryData = {
+  bu: string;                    // "ALL" | "CN" | "JP" | "TW"
+  buCounts: Record<string, number>;
   summary: Summary;
   monthly: { year_month: string; PO: number; DN: number; SHIPMENT: number; GR: number }[];
   buyerMonthly: any[];
@@ -45,6 +47,12 @@ type HistoryData = {
   allMonths: string[];
   shipmentByContainer: { container: string; count: number }[];
 };
+
+const BU_OPTIONS = [
+  { code: "CN", label: "무신사 CN", flag: "🇨🇳" },
+  { code: "JP", label: "무신사 JP", flag: "🇯🇵" },
+  { code: "TW", label: "무신사 TW", flag: "🇹🇼" },
+];
 
 function fmtNum(n: number): string {
   return new Intl.NumberFormat("ko-KR").format(n);
@@ -60,12 +68,15 @@ export default function HistoryPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [selectedAllocIdx, setSelectedAllocIdx] = useState<number | null>(null);
+  const [activeBu, setActiveBu] = useState<string>("ALL"); // "ALL" | "CN" | "JP" | "TW"
+  const [uploadBu, setUploadBu] = useState<string>("CN");  // 업로드 시 선택할 BU
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function load() {
+  async function load(bu: string = activeBu) {
     setLoading(true);
     try {
-      const res = await fetch("/api/monitor/history", { cache: "no-store" });
+      const qs = bu && bu !== "ALL" ? `?bu=${bu}` : "";
+      const res = await fetch(`/api/monitor/history${qs}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
       setData(json);
@@ -76,14 +87,16 @@ export default function HistoryPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(activeBu); }, [activeBu]);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const buLabel = BU_OPTIONS.find(b => b.code === uploadBu);
     const ok = confirm(
-      `이 파일로 기존 History 데이터를 전부 교체합니다.\n\n파일: ${file.name}\n\n진행할까요?`
+      `[${buLabel?.flag} ${buLabel?.label}] BU의 기존 History 데이터를 이 파일로 교체합니다.\n` +
+      `(다른 BU 데이터는 영향 없음)\n\n파일: ${file.name}\n\n진행할까요?`
     );
     if (!ok) {
       if (fileRef.current) fileRef.current.value = "";
@@ -95,13 +108,16 @@ export default function HistoryPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch("/api/monitor/history/upload", { method: "POST", body: fd });
+      const res = await fetch(
+        `/api/monitor/history/upload?bu=${uploadBu}`,
+        { method: "POST", body: fd }
+      );
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
       setUploadResult(json);
-      await load();
+      await load(activeBu);
       alert(
-        `업로드 완료\n\n` +
+        `[${json.bu}] 업로드 완료\n\n` +
         `- PO: ${json.summary.po_count}건\n` +
         `- DN: ${json.summary.dn_count}건\n` +
         `- Shipment: ${json.summary.shipment_count}건\n` +
@@ -136,13 +152,31 @@ export default function HistoryPage() {
             </p>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center flex-wrap">
           <a
             href="/api/monitor/history/template"
             className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
           >
             📥 양식 다운로드
           </a>
+
+          {/* 업로드 BU 선택 */}
+          <div className="flex items-center gap-1.5 border rounded px-2 py-1 bg-gray-50">
+            <span className="text-xs text-gray-500">업로드 BU:</span>
+            <select
+              value={uploadBu}
+              onChange={(e) => setUploadBu(e.target.value)}
+              disabled={uploading}
+              className="text-sm bg-transparent focus:outline-none font-medium"
+            >
+              {BU_OPTIONS.map(b => (
+                <option key={b.code} value={b.code}>
+                  {b.flag} {b.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <input
             ref={fileRef}
             type="file"
@@ -156,9 +190,43 @@ export default function HistoryPage() {
             htmlFor="history-upload"
             className={`rounded px-4 py-2 text-sm text-white cursor-pointer ${uploading ? "bg-gray-400" : "bg-black hover:bg-gray-800"}`}
           >
-            {uploading ? "Uploading..." : "📤 Excel 업로드 (오버라이드)"}
+            {uploading ? "Uploading..." : `📤 ${BU_OPTIONS.find(b => b.code === uploadBu)?.flag} ${uploadBu} 업로드 (오버라이드)`}
           </label>
         </div>
+      </div>
+
+      {/* BU 필터 탭 */}
+      <div className="flex items-center gap-1 border-b">
+        <button
+          type="button"
+          onClick={() => setActiveBu("ALL")}
+          className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
+            activeBu === "ALL"
+              ? "border-black text-black font-semibold"
+              : "border-transparent text-gray-500 hover:text-gray-800"
+          }`}
+        >
+          🌐 전체
+          {data?.buCounts && Object.keys(data.buCounts).length > 0 && (
+            <span className="ml-1.5 text-xs text-gray-400">
+              ({Object.keys(data.buCounts).join(" + ")})
+            </span>
+          )}
+        </button>
+        {BU_OPTIONS.map(b => (
+          <button
+            key={b.code}
+            type="button"
+            onClick={() => setActiveBu(b.code)}
+            className={`px-4 py-2 text-sm border-b-2 -mb-px transition-colors ${
+              activeBu === b.code
+                ? "border-black text-black font-semibold"
+                : "border-transparent text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            {b.flag} {b.label}
+          </button>
+        ))}
       </div>
 
       {/* Summary Cards — 건수는 unique 문서 번호 기준 (line 수 아님) */}

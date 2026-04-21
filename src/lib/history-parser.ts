@@ -23,6 +23,7 @@ export type HistoryDocRow = {
   vessel: string | null;
   container: string | null;
   remarks: string | null;
+  business_unit: string | null;
   raw_data: any;
 };
 
@@ -34,6 +35,7 @@ export type HistorySettlementRow = {
   other_cost: number;
   notes: string | null;
   dn_nos: string[];
+  business_unit: string | null;
 };
 
 export type HistoryParseResult = {
@@ -96,7 +98,10 @@ function readSheet(wb: XLSX.WorkBook, names: string[]): any[] {
   return [];
 }
 
-export function parseHistoryExcel(buffer: Buffer): HistoryParseResult {
+export function parseHistoryExcel(
+  buffer: Buffer,
+  businessUnit: string | null = null
+): HistoryParseResult {
   const wb = XLSX.read(buffer, { type: "buffer" });
 
   const documents: HistoryDocRow[] = [];
@@ -122,6 +127,7 @@ export function parseHistoryExcel(buffer: Buffer): HistoryParseResult {
       bl_no: null, etd: null, eta: null, atd: null, ata: null,
       buyer_gr_date: null, invoice_no: null, vessel: null, container: null,
       remarks: str(r.remarks || r.Remarks),
+      business_unit: businessUnit,
       raw_data: r,
     });
   }
@@ -146,6 +152,7 @@ export function parseHistoryExcel(buffer: Buffer): HistoryParseResult {
       bl_no: null, etd: null, eta: null, atd: null, ata: null,
       buyer_gr_date: null, invoice_no: null, vessel: null, container: null,
       remarks: str(r.remarks || r.Remarks),
+      business_unit: businessUnit,
       raw_data: r,
     });
   }
@@ -177,6 +184,7 @@ export function parseHistoryExcel(buffer: Buffer): HistoryParseResult {
       vessel: str(r.vessel || r.Vessel),
       container: str(r.container || r.Container),
       remarks: shipDnNo || str(r.remarks || r.Remarks),  // dn_no를 remarks에 저장 (안분 매칭용)
+      business_unit: businessUnit,
       raw_data: r,
     });
   }
@@ -199,6 +207,7 @@ export function parseHistoryExcel(buffer: Buffer): HistoryParseResult {
       bl_no: null, etd: null, eta: null, atd: null, ata: null,
       buyer_gr_date: null, invoice_no: null, vessel: null, container: null,
       remarks: str(r.remarks || r.Remarks),
+      business_unit: businessUnit,
       raw_data: r,
     });
   }
@@ -229,6 +238,7 @@ export function parseHistoryExcel(buffer: Buffer): HistoryParseResult {
         other_cost: other,
         notes: str(r.notes || r.Notes),
         dn_nos: dnNo ? [dnNo] : [],
+        business_unit: businessUnit,
       };
     } else if (currentGroup && dnNo) {
       // 기존 그룹에 DN_NO 추가

@@ -1,15 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/monitor/history
+ * GET /api/monitor/history?bu=CN
  *
  * Summary + Charts용 집계 데이터 반환
+ * - bu 파라미터 있으면 해당 BU만 집계 (CN/JP/TW)
+ * - bu 없거나 "ALL"이면 전체 BU 합산
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const buParam = (req.nextUrl.searchParams.get("bu") || "").trim().toUpperCase();
+    const bu = buParam && buParam !== "ALL" ? buParam : null;
+
     const sb = await createClient();
 
     // Supabase 기본 1000행 제한 우회 — 페이지네이션으로 전체 조회
@@ -19,11 +24,13 @@ export async function GET() {
     {
       let page = 0;
       while (true) {
-        const { data, error } = await sb
+        let q = sb
           .from("history_document")
           .select("*")
           .order("doc_date", { ascending: true })
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+        if (bu) q = q.eq("business_unit", bu);
+        const { data, error } = await q;
         if (error) throw error;
         if (!data || data.length === 0) break;
         documents.push(...data);
@@ -37,17 +44,34 @@ export async function GET() {
     {
       let page = 0;
       while (true) {
-        const { data, error } = await sb
+        let q = sb
           .from("history_settlement")
           .select("*")
           .order("year_month", { ascending: true })
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+        if (bu) q = q.eq("business_unit", bu);
+        const { data, error } = await q;
         if (error) throw error;
         if (!data || data.length === 0) break;
         settlements.push(...data);
         if (data.length < PAGE_SIZE) break;
         page += 1;
         if (page > 50) break; // safety: 최대 50,000행
+      }
+    }
+
+    // 선택된 BU별 row 개수 (UI에서 탭 뱃지 표시용)
+    const buCounts: Record<string, number> = {};
+    if (!bu) {
+      // ALL 조회 시 업로드된 BU 목록 조사
+      const { data: buRows } = await sb
+        .from("history_document")
+        .select("business_unit")
+        .not("business_unit", "is", null)
+        .limit(100000);
+      for (const r of buRows || []) {
+        const v = (r as any).business_unit as string;
+        buCounts[v] = (buCounts[v] || 0) + 1;
       }
     }
 
@@ -190,6 +214,8 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
+      bu: bu || "ALL",
+      buCounts,
       summary,
       monthly,
       buyerMonthly,
