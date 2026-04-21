@@ -309,17 +309,11 @@ export default function HistoryPage() {
               {data.buyerMonthly.map((row: any, i: number) => {
                 const total = row._total ?? data.allMonths.reduce((s, m) => s + (row[m] || 0), 0);
                 const label = row.display_label || row.vendor_name || row.vendor_code || row.buyer_code || "—";
-                const sub = row.vendor_code && row.vendor_name ? row.vendor_code : null;
                 const rowKey = `${row.vendor_code || ""}::${row.buyer_code || ""}::${i}`;
                 return (
                   <tr key={rowKey} className="border-t hover:bg-gray-50">
                     <td className="px-3 py-2 text-gray-400 font-mono">{i + 1}</td>
-                    <td className="px-3 py-2 font-medium">
-                      {label}
-                      {sub && (
-                        <span className="ml-1.5 text-xs text-gray-400 font-normal">({sub})</span>
-                      )}
-                    </td>
+                    <td className="px-3 py-2 font-medium">{label}</td>
                     {data.allMonths.map(m => (
                       <td key={m} className="px-3 py-2 text-right">{fmtNum(row[m] || 0)}</td>
                     ))}
