@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     rows_read: 0,
     rows_upserted: 0,
     rows_skipped: 0,
+    rows_filtered_empty: 0, // 매핑 단계에서 빈 row로 제외된 개수
   };
 
   // 인증: Vercel Cron header 또는 SYNC_SECRET
@@ -70,15 +71,18 @@ export async function GET(req: NextRequest) {
     log.rows_read = objects.length;
 
     // 2. 매핑
+    let emptyCount = 0;
     const mapped = objects
       .map((obj, i) => {
         // 완전 빈 row는 건너뜀
         if (!obj["오더시즌"] && !obj["Brand Name"] && !obj["Style-Color-Size Code"]) {
+          emptyCount += 1;
           return null;
         }
         return mapExportRow(obj, i + 2); // sheet row number (1=header)
       })
       .filter(Boolean) as any[];
+    log.rows_filtered_empty = emptyCount;
 
     // 3. Locked (25fw) row 확인 — 기존 DB에서 is_locked=true인 row_key 조회
     const { data: lockedRows } = await sb
@@ -109,6 +113,7 @@ export async function GET(req: NextRequest) {
           rows_read: log.rows_read,
           rows_upserted: log.rows_upserted,
           rows_skipped: log.rows_skipped,
+          rows_filtered_empty: log.rows_filtered_empty,
           status: "success",
           finished_at: new Date().toISOString(),
         })
@@ -126,6 +131,7 @@ export async function GET(req: NextRequest) {
           rows_read: log.rows_read,
           rows_upserted: log.rows_upserted,
           rows_skipped: log.rows_skipped,
+          rows_filtered_empty: log.rows_filtered_empty,
           status: "error",
           error_message: errorMsg,
           finished_at: new Date().toISOString(),

@@ -150,6 +150,13 @@ export default function ExportDashboardPage() {
             <option value="all">전체</option>
             <option value="25fw">25FW (아카이브)</option>
           </select>
+          <a
+            href={`/api/monitor/export-dashboard/raw-dump?season=${season}`}
+            className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
+            title="현재 DB의 history_export_raw 원본 CSV 다운로드 (Google Sheet와 대조용)"
+          >
+            📥 Raw CSV
+          </a>
           <button
             onClick={handleManualSync}
             disabled={syncing}
@@ -321,7 +328,8 @@ export default function ExportDashboardPage() {
           <span>📅 {fmtDateTime(data.syncLogs[0].started_at)}</span>
           <span>읽음 {data.syncLogs[0].rows_read || 0}</span>
           <span>UPSERT {data.syncLogs[0].rows_upserted || 0}</span>
-          {data.syncLogs[0].rows_skipped > 0 && <span>Skip {data.syncLogs[0].rows_skipped}</span>}
+          {data.syncLogs[0].rows_skipped > 0 && <span title="is_locked=true로 잠긴 row (25fw 등)">Skip(lock) {data.syncLogs[0].rows_skipped}</span>}
+          {data.syncLogs[0].rows_filtered_empty > 0 && <span title="오더시즌/Brand/SKU가 모두 비어 매핑에서 제외된 row">Skip(empty) {data.syncLogs[0].rows_filtered_empty}</span>}
           {data.syncLogs[0].error_message && (
             <span className="text-red-600">⚠ {data.syncLogs[0].error_message}</span>
           )}
