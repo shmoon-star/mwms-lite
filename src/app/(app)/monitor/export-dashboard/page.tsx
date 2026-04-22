@@ -83,6 +83,7 @@ export default function ExportDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [season, setSeason] = useState("26ss");
   const [syncing, setSyncing] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -115,6 +116,47 @@ export default function ExportDashboardPage() {
       alert(e.message || "Sync failed");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleOfflineUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // reset so same file can be re-selected later
+    e.target.value = "";
+
+    const lock = confirm(
+      `파일: ${file.name}\n\n` +
+      `Lock 상태로 업로드할까요?\n` +
+      `[확인] Lock — is_locked=true\n` +
+      `   → 다음 Google Sheet sync 때 덮어쓰기 안 됨 (25fw 같은 종결 데이터 복원용)\n\n` +
+      `[취소] Unlock — 일반 UPSERT (sync 시 덮어쓰기 가능)`
+    );
+
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(
+        `/api/monitor/export-dashboard/upload?lock=${lock}`,
+        { method: "POST", body: fd }
+      );
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Upload failed");
+      const s = json.summary;
+      alert(
+        `업로드 완료 ${s.locked ? "(Locked)" : "(Unlocked)"}\n\n` +
+        `- 파일: ${s.file_name}\n` +
+        `- 시트: ${s.sheet_name}\n` +
+        `- 읽음: ${s.rows_read}\n` +
+        `- UPSERT: ${s.rows_upserted}\n` +
+        `- Skip(empty): ${s.rows_filtered_empty}`
+      );
+      await load();
+    } catch (e: any) {
+      alert(e.message || "Upload failed");
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -157,6 +199,21 @@ export default function ExportDashboardPage() {
           >
             📥 Raw CSV
           </a>
+          <input
+            id="export-offline-upload"
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleOfflineUpload}
+            disabled={uploading}
+            className="hidden"
+          />
+          <label
+            htmlFor="export-offline-upload"
+            className={`rounded border px-4 py-2 text-sm cursor-pointer ${uploading ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "hover:bg-gray-50"}`}
+            title="오프라인 xlsx 파일로 history_export_raw 복원/추가 (25fw 종결 데이터용)"
+          >
+            {uploading ? "Uploading..." : "📤 Offline 업로드"}
+          </label>
           <button
             onClick={handleManualSync}
             disabled={syncing}
