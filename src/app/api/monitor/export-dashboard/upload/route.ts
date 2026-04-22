@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { mapExportRow } from "@/lib/export-raw-mapper";
+import { mapExportRow, normalizeHeaderKeys } from "@/lib/export-raw-mapper";
 import * as XLSX from "xlsx";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +46,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "시트를 찾을 수 없습니다." }, { status: 400 });
     }
 
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
+    const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
+    // xlsx 헤더에 "\r\n" 같은 whitespace가 섞여 있으면 mapper가 컬럼을 못 찾음.
+    // 업스트림에서 한 번 normalize 후 downstream에서 일관되게 사용.
+    const rows = rawRows.map((r: any) => normalizeHeaderKeys(r));
 
     let emptyCount = 0;
     const mapped = rows

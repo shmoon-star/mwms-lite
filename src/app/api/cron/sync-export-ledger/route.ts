@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readSheet, rowsToObjects } from "@/lib/google-sheets";
-import { mapExportRow } from "@/lib/export-raw-mapper";
+import { mapExportRow, normalizeHeaderKeys } from "@/lib/export-raw-mapper";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,7 +67,9 @@ export async function GET(req: NextRequest) {
   try {
     // 1. Google Sheets 읽기
     const rows = await readSheet(sheetId, sheetName);
-    const objects = rowsToObjects(rows);
+    const rawObjects = rowsToObjects(rows);
+    // 헤더 whitespace 정규화 (wrap된 셀 헤더의 "\r\n" 등으로 인한 키 mismatch 방지)
+    const objects = rawObjects.map(normalizeHeaderKeys);
     log.rows_read = objects.length;
 
     // 2. 매핑

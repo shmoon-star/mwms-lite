@@ -2,9 +2,23 @@ import { excelDateToISO, toNum, toInt, toStr } from "./google-sheets";
 import crypto from "crypto";
 
 /**
+ * 헤더 키의 whitespace(공백/개행/탭 시퀀스)를 단일 공백으로 정규화.
+ * 오프라인 xlsx export는 wrap된 셀 헤더에 "\r\n"이 섞여 들어오는 경우가 있어
+ * Google Sheet API로 받는 깔끔한 헤더와 mismatch되는 문제를 방지.
+ */
+export function normalizeHeaderKeys(row: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(row)) {
+    out[k.replace(/\s+/g, " ").trim()] = v;
+  }
+  return out;
+}
+
+/**
  * 수출내역_Raw 시트의 한 row를 DB 스키마로 매핑
  */
-export function mapExportRow(r: Record<string, any>, rowNumber: number) {
+export function mapExportRow(rawR: Record<string, any>, rowNumber: number) {
+  const r = normalizeHeaderKeys(rawR);
   const invoiceNo = toStr(r["인보이스 번호"]);
   const blNo = toStr(r["BL 번호"]);
   const skuCode = toStr(r["Style-Color-Size Code"]);
