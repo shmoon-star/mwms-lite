@@ -51,6 +51,7 @@ const groups = [
     items: [
       { href: "/analytics/wms-dashboard", label: "WMS Daily", sub: "입출고 대시보드" },
       { href: "/tools/freight-estimator", label: "Freight Rates", sub: "Freightos 운임 견적" },
+      { href: "/tools/customs-tracking", label: "Customs Tracking", sub: "수입 통관 진행 (UNI-PASS)" },
     ],
   },
   {
