@@ -150,7 +150,8 @@ export default function ExportDashboardPage() {
         `- 시트: ${s.sheet_name}\n` +
         `- 읽음: ${s.rows_read}\n` +
         `- UPSERT: ${s.rows_upserted}\n` +
-        `- Skip(empty): ${s.rows_filtered_empty}`
+        `- Skip(empty): ${s.rows_filtered_empty}\n` +
+        `- Dedup(파일 내 중복): ${s.rows_dedup_skipped || 0}`
       );
       await load();
     } catch (e: any) {

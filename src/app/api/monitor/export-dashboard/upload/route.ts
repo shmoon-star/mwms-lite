@@ -74,11 +74,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 파일 내부 중복 row_key 제거 (같은 invoice+bl+sku 조합이 여러 번 있으면
+    // UPSERT가 "ON CONFLICT DO UPDATE command cannot affect row a second time"
+    // 로 실패함 → 마지막 occurrence만 남김)
+    const dedupMap = new Map<string, any>();
+    for (const row of mapped) {
+      dedupMap.set(row.row_key, row); // 같은 key는 뒤에 오는 값으로 덮어씀
+    }
+    const dedupedRows = Array.from(dedupMap.values());
+    const dedupSkipped = mapped.length - dedupedRows.length;
+
     // UPSERT — 청크 단위
     const CHUNK = 500;
     let upserted = 0;
-    for (let i = 0; i < mapped.length; i += CHUNK) {
-      const chunk = mapped.slice(i, i + CHUNK);
+    for (let i = 0; i < dedupedRows.length; i += CHUNK) {
+      const chunk = dedupedRows.slice(i, i + CHUNK);
       const { error } = await sb
         .from("history_export_raw")
         .upsert(chunk, { onConflict: "row_key" });
@@ -92,7 +102,7 @@ export async function POST(req: NextRequest) {
       sheet_name: `${file.name}${lock ? " (locked)" : ""}`,
       rows_read: rows.length,
       rows_upserted: upserted,
-      rows_skipped: 0,
+      rows_skipped: dedupSkipped,
       rows_filtered_empty: emptyCount,
       status: "success",
       finished_at: new Date().toISOString(),
@@ -107,6 +117,7 @@ export async function POST(req: NextRequest) {
         rows_read: rows.length,
         rows_upserted: upserted,
         rows_filtered_empty: emptyCount,
+        rows_dedup_skipped: dedupSkipped,
       },
     });
   } catch (e: any) {
