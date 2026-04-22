@@ -159,6 +159,13 @@ export default function HistoryPage() {
           >
             📥 양식 다운로드
           </a>
+          <a
+            href={`/api/monitor/history/download${activeBu !== "ALL" ? `?bu=${activeBu}` : ""}`}
+            className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
+            title={activeBu === "ALL" ? "전체 BU 데이터 다운로드 (xlsx, 재업로드 가능)" : `${activeBu} BU 데이터만 다운로드`}
+          >
+            💾 데이터 다운로드 {activeBu !== "ALL" ? `(${activeBu})` : "(전체)"}
+          </a>
 
           {/* 업로드 BU 선택 */}
           <div className="flex items-center gap-1.5 border rounded px-2 py-1 bg-gray-50">
