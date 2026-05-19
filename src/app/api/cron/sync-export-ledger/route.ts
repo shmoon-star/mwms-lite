@@ -93,18 +93,23 @@ export async function GET(req: NextRequest) {
       .eq("is_locked", true);
     const lockedKeys = new Set((lockedRows || []).map(r => r.row_key));
 
-    // 4. UPSERT (Locked row는 업데이트 제외)
+     // 4. UPSERT (Locked row는 업데이트 제외)
     const toUpsert = mapped.filter(m => !lockedKeys.has(m.row_key));
     log.rows_skipped = mapped.length - toUpsert.length;
 
+    // 시트 내부 중복 row_key 제거 (같은 invoice+bl+sku 조합이 여러 번 있으면
+    // UPSERT가 "ON CONFLICT DO UPDATE command cannot affect row a second time"
+    // 로 실패함 → 마지막 occurrence만 남김)
+    const dedupMap = new Map<string, any>();
+    for (const row of toUpsert) {
+      dedupMap.set(row.row_key, row);
+    }
+    const dedupedRows = Array.from(dedupMap.values());
+    log.rows_skipped += toUpsert.length - dedupedRows.length;
+
     const CHUNK = 500;
-    for (let i = 0; i < toUpsert.length; i += CHUNK) {
-      const chunk = toUpsert.slice(i, i + CHUNK);
-      const { error } = await sb
-        .from("history_export_raw")
-        .upsert(chunk, { onConflict: "row_key" });
-      if (error) throw new Error(`UPSERT 실패 (${i}~): ${error.message}`);
-      log.rows_upserted += chunk.length;
+    for (let i = 0; i < dedupedRows.length; i += CHUNK) {
+      const chunk = dedupedRows.slice(i, i + CHUNK);
     }
 
     // 5. 로그 업데이트 (성공)
