@@ -107,9 +107,14 @@ export async function GET(req: NextRequest) {
     const dedupedRows = Array.from(dedupMap.values());
     log.rows_skipped += toUpsert.length - dedupedRows.length;
 
-    const CHUNK = 500;
+       const CHUNK = 500;
     for (let i = 0; i < dedupedRows.length; i += CHUNK) {
       const chunk = dedupedRows.slice(i, i + CHUNK);
+      const { error } = await sb
+        .from("history_export_raw")
+        .upsert(chunk, { onConflict: "row_key" });
+      if (error) throw new Error(`UPSERT 실패 (${i}~): ${error.message}`);
+      log.rows_upserted += chunk.length;
     }
 
     // 5. 로그 업데이트 (성공)
