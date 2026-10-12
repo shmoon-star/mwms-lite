@@ -8,7 +8,7 @@ export const runtime = "nodejs";
  * GET /api/monitor/export-dashboard/raw-dump?season=26ss
  *
  * `history_export_raw` 테이블 CSV 덤프 (전체 컬럼).
- * - season 파라미터로 필터 (없거나 "all"이면 전체)
+ * - season 파라미터로 필터 (없거나 "all"이면 전체, "active"면 Lock 안 된 진행 중 시즌)
  * - 비교/디버깅용: Google Sheet 원본 vs DB 현재 상태 대조
  */
 export async function GET(req: NextRequest) {
@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
         .select("*")
         .order("row_key", { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-      if (season && season !== "all") q = q.eq("order_season", season);
+      if (season === "active") q = q.or("is_locked.is.null,is_locked.eq.false");
+      else if (season && season !== "all") q = q.eq("order_season", season);
 
       const { data, error } = await q;
       if (error) throw error;

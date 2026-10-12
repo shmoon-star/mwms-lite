@@ -14,7 +14,8 @@ export async function GET(req: NextRequest) {
     // Admin client로 RLS 우회 (public 대시보드)
     const sb = createAdminClient();
     const url = new URL(req.url);
-    const season = url.searchParams.get("season") || ""; // '', '26ss', '25fw' or 'all'
+    // '' | 'all' = 전체, 'active' = Lock 안 된 진행 중 시즌 전부, 그 외 = 특정 시즌 (예: '26fw')
+    const season = url.searchParams.get("season") || "";
 
     // Supabase 기본 1000 row 제한 우회 — 페이지네이션
     const data: any[] = [];
@@ -22,7 +23,8 @@ export async function GET(req: NextRequest) {
     const PAGE_SIZE = 1000;
     while (true) {
       let q = sb.from("history_export_raw").select("*");
-      if (season && season !== "all") q = q.eq("order_season", season);
+      if (season === "active") q = q.or("is_locked.is.null,is_locked.eq.false");
+      else if (season && season !== "all") q = q.eq("order_season", season);
       q = q.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
       const { data: chunk, error } = await q;
@@ -146,6 +148,36 @@ export async function GET(req: NextRequest) {
       },
     };
 
+    // === 시즌 목록 (드롭다운용) — 필터와 무관하게 DB 전체 기준 ===
+    // 시즌 하나라도 Lock 안 된 row가 있으면 진행 중(locked=false)으로 본다
+    const seasonMap = new Map<string, { season: string; locked: boolean; rows: number }>();
+    for (let p = 0; p <= 30; p++) {
+      const { data: chunk, error } = await sb
+        .from("history_export_raw")
+        .select("order_season,is_locked")
+        .range(p * PAGE_SIZE, (p + 1) * PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!chunk || chunk.length === 0) break;
+      for (const r of chunk) {
+        const key = r.order_season || "";
+        if (!key) continue;
+        if (!seasonMap.has(key)) seasonMap.set(key, { season: key, locked: true, rows: 0 });
+        const e = seasonMap.get(key)!;
+        e.rows += 1;
+        if (!r.is_locked) e.locked = false;
+      }
+      if (chunk.length < PAGE_SIZE) break;
+    }
+    // 최신 시즌 먼저: 연도 내림차순, 같은 연도면 FW > SS
+    const seasonRank = (s: string) => {
+      const m = s.match(/^(\d{2})\s*(ss|fw)/i);
+      if (!m) return -1;
+      return Number(m[1]) * 2 + (m[2].toLowerCase() === "fw" ? 1 : 0);
+    };
+    const seasons = Array.from(seasonMap.values()).sort(
+      (a, b) => seasonRank(b.season) - seasonRank(a.season) || b.season.localeCompare(a.season)
+    );
+
     // === 최근 sync 로그 ===
     const { data: logs } = await sb
       .from("history_sync_log")
@@ -160,6 +192,7 @@ export async function GET(req: NextRequest) {
       brands,
       status,
       leadTime,
+      seasons,
       syncLogs: logs || [],
     });
   } catch (e: any) {
