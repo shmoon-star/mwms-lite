@@ -25,6 +25,7 @@ type DashData = {
     total_avg: number;
     counts?: { stage1: number; stage2: number; stage3: number; total: number };
   };
+  seasons?: { season: string; locked: boolean; rows: number }[];
   syncLogs: any[];
 };
 
@@ -81,7 +82,8 @@ function fmtDateTime(v: string | null) {
 export default function ExportDashboardPage() {
   const [data, setData] = useState<DashData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [season, setSeason] = useState("26ss");
+  // 기본 = 진행 중 시즌 전체 (Lock 안 된 시즌들). 시즌 목록은 API가 DB 기준으로 내려줌
+  const [season, setSeason] = useState("active");
   const [syncing, setSyncing] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -166,6 +168,8 @@ export default function ExportDashboardPage() {
 
   const s = data.summary;
   const lastSync = data.syncLogs?.[0];
+  const seasons = data.seasons || [];
+  const activeLabel = seasons.filter(x => !x.locked).map(x => x.season.toUpperCase()).join(" + ");
 
   return (
     <div className="p-6 space-y-6">
@@ -189,9 +193,13 @@ export default function ExportDashboardPage() {
             onChange={(e) => setSeason(e.target.value)}
             className="rounded border px-3 py-2 text-sm"
           >
-            <option value="26ss">현재 시즌만 (26SS)</option>
-            <option value="all">전체</option>
-            <option value="25fw">25FW (아카이브)</option>
+            <option value="active">진행 중 시즌{activeLabel ? ` (${activeLabel})` : ""}</option>
+            <option value="all">전체 (아카이브 포함)</option>
+            {seasons.map(x => (
+              <option key={x.season} value={x.season}>
+                {x.season.toUpperCase()}{x.locked ? " (아카이브)" : ""}
+              </option>
+            ))}
           </select>
           <a
             href={`/api/monitor/export-dashboard/raw-dump?season=${season}`}
