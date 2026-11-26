@@ -26,6 +26,8 @@ type DashData = {
     counts?: { stage1: number; stage2: number; stage3: number; total: number };
   };
   seasons?: { season: string; locked: boolean; rows: number }[];
+  assume?: boolean;
+  assumed?: { status_rows: number; status_qty: number; ata_rows: number };
   syncLogs: any[];
 };
 
@@ -84,13 +86,15 @@ export default function ExportDashboardPage() {
   const [loading, setLoading] = useState(true);
   // 기본 = 진행 중 시즌 전체 (Lock 안 된 시즌들). 시즌 목록은 API가 DB 기준으로 내려줌
   const [season, setSeason] = useState("active");
+  // 운영 가정(선적 중 → 입고 완료 간주, CN 도착일 추정) 적용 여부. 기본 ON
+  const [assume, setAssume] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/monitor/export-dashboard?season=${season}`, { cache: "no-store" });
+      const res = await fetch(`/api/monitor/export-dashboard?season=${season}&assume=${assume ? 1 : 0}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
       setData(json);
@@ -101,7 +105,7 @@ export default function ExportDashboardPage() {
     }
   }
 
-  useEffect(() => { load(); }, [season]);
+  useEffect(() => { load(); }, [season, assume]);
 
   async function handleManualSync() {
     if (!confirm("지금 즉시 Google Sheets에서 데이터를 동기화할까요?")) return;
@@ -186,8 +190,21 @@ export default function ExportDashboardPage() {
               {" "}(업데이트 {lastSync.rows_upserted || 0}건)
             </p>
           )}
+          {data.assume && data.assumed && (data.assumed.status_rows > 0 || data.assumed.ata_rows > 0) && (
+            <p className="text-xs text-amber-700 mt-1">
+              ⚠ 가정 적용 중 — 선적 중 {fmtNum(data.assumed.status_rows)}행({fmtNum(data.assumed.status_qty)}개)을 CN 입고 완료로 간주,
+              {" "}CN 도착일 {fmtNum(data.assumed.ata_rows)}행 추정 (ATD+5일 / 없으면 DC 출고+9일)
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
+          <label
+            className="flex items-center gap-1 rounded border px-3 py-2 text-sm cursor-pointer"
+            title="ON: 선적 중이라도 ATD 또는 DC 출고일이 있으면 CN 입고 완료로 간주, CN 도착일 비어 있으면 ATD+5일(없으면 DC 출고+9일)로 추정. OFF: 시트 원본 그대로"
+          >
+            <input type="checkbox" checked={assume} onChange={(e) => setAssume(e.target.checked)} />
+            가정 적용
+          </label>
           <select
             value={season}
             onChange={(e) => setSeason(e.target.value)}

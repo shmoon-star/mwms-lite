@@ -16,9 +16,11 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     // '' | 'all' = 전체, 'active' = Lock 안 된 진행 중 시즌 전부, 그 외 = 특정 시즌 (예: '26fw')
     const season = url.searchParams.get("season") || "";
+    // assume=0 이면 원본 그대로 집계, 그 외(기본)는 아래 "운영 가정" 적용
+    const assume = url.searchParams.get("assume") !== "0";
 
     // Supabase 기본 1000 row 제한 우회 — 페이지네이션
-    const data: any[] = [];
+    const raw: any[] = [];
     let page = 0;
     const PAGE_SIZE = 1000;
     while (true) {
@@ -30,19 +32,48 @@ export async function GET(req: NextRequest) {
       const { data: chunk, error } = await q;
       if (error) throw error;
       if (!chunk || chunk.length === 0) break;
-      data.push(...chunk);
+      raw.push(...chunk);
       if (chunk.length < PAGE_SIZE) break;
       page++;
       if (page > 30) break; // safety (최대 30,000)
     }
 
-    // === Summary ===
-    // "실 선적" 지표들은 모두 "CN창고 입고 완료" 상태만 카운트 (실제 도착 완료분)
     // Google Sheet 원본 값의 공백 변형(CN창고/CN 창고, 입고/입 고 등)을 흡수하기 위해
     // 공백 제거 후 비교한다.
     const normalizeStatus = (s: any): string => String(s ?? "").replace(/\s+/g, "");
     const SHIPPED_STATUS_NORM = normalizeStatus("CN창고입고완료");
-    const isShipped = (d: any) => normalizeStatus(d.shipment_status) === SHIPPED_STATUS_NORM;
+    const SHIPPING_STATUS_NORM = normalizeStatus("선적중");
+
+    // === 운영 가정 (원본 시트/DB는 그대로, 집계용 사본에만 적용) ===
+    // 시트에서 CN 도착 정보(ATA Warehouse, 상태)가 제때 관리되지 않아 아래처럼 추정한다.
+    //   1) ATA Warehouse 비어 있으면: ATD Port + 5일, ATD도 없으면 DC 출고일 + 9일
+    //   2) "선적 중"인데 ATD Port 또는 DC 출고일이 있으면 → CN 창고 입고 완료로 간주
+    // 추정으로 바뀐 row는 상태에 "(추정)"을 붙여 시즌×Status 표에서 따로 보이게 한다.
+    const addDays = (v: any, n: number): string | null => {
+      const t = new Date(String(v)).getTime();
+      if (isNaN(t)) return null;
+      return new Date(t + n * 86400000).toISOString().slice(0, 10);
+    };
+    const assumed = { status_rows: 0, status_qty: 0, ata_rows: 0 };
+    const data = !assume ? raw : raw.map((d) => {
+      const out = { ...d };
+      if (!out.ata_warehouse) {
+        const est = out.atd_port ? addDays(out.atd_port, 5)
+          : out.dc_outbound_date ? addDays(out.dc_outbound_date, 9) : null;
+        if (est) { out.ata_warehouse = est; assumed.ata_rows += 1; }
+      }
+      if (normalizeStatus(out.shipment_status) === SHIPPING_STATUS_NORM && (out.atd_port || out.dc_outbound_date)) {
+        out.shipment_status = "CN 창고 입고 완료 (추정)";
+        out._assumed_shipped = true;
+        assumed.status_rows += 1;
+        assumed.status_qty += out.qty_shipped || 0;
+      }
+      return out;
+    });
+
+    // === Summary ===
+    // "실 선적" 지표들은 "CN창고 입고 완료" 상태만 카운트 (assume 시 위 가정으로 간주된 row 포함)
+    const isShipped = (d: any) => !!d._assumed_shipped || normalizeStatus(d.shipment_status) === SHIPPED_STATUS_NORM;
     const summary = {
       total_rows: data.length,
       total_ordered: data.reduce((s, d) => s + (d.qty_ordered || 0), 0),
@@ -192,6 +223,8 @@ export async function GET(req: NextRequest) {
       brands,
       status,
       leadTime,
+      assume,
+      assumed,
       seasons,
       syncLogs: logs || [],
     });
