@@ -14,6 +14,12 @@ export function normalizeHeaderKeys(row: Record<string, any>): Record<string, an
   return out;
 }
 
+/** SKU 칸이 "-" 나 빈칸인 비상품 행인지 */
+export function isNoSku(sku: string | null | undefined): boolean {
+  const s = String(sku ?? "").trim();
+  return s === "" || /^-+$/.test(s);
+}
+
 /**
  * 수출내역_Raw 시트의 한 row를 DB 스키마로 매핑
  */
@@ -26,7 +32,12 @@ export function mapExportRow(rawR: Record<string, any>, rowNumber: number) {
   // UPSERT key: invoice + bl + sku 조합 해시
   // (이전에는 rowNumber까지 포함했는데, Google Sheet에서 같은 SKU의 row 번호가
   //  바뀔 때마다 새 row로 누적 저장되어 중복이 쌓이는 문제가 있었음. 2026-04-21 수정)
-  const keyInput = `${invoiceNo || ""}|${blNo || ""}|${skuCode || ""}`;
+  //
+  // 같은 BL + 같은 SKU = 시트 입력 오류로 보고 1행만 남긴다 (운영 기준, 2026-11-27).
+  // 단 SKU가 "-"/빈칸인 비상품(키링, 쇼핑백 등)은 SKU로 구분이 안 되므로
+  // Description(EN)을 대신 키로 써서 서로 다른 품목이 합쳐지지 않게 한다.
+  const itemKey = isNoSku(skuCode) ? `DESC:${toStr(r["Description (EN)"]) || ""}` : skuCode;
+  const keyInput = `${invoiceNo || ""}|${blNo || ""}|${itemKey || ""}`;
   const rowKey = crypto.createHash("sha1").update(keyInput).digest("hex").slice(0, 32);
 
   return {
