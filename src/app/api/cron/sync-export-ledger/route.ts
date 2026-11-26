@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readSheet, rowsToObjects } from "@/lib/google-sheets";
-import { mapExportRow, normalizeHeaderKeys } from "@/lib/export-raw-mapper";
+import { mapExportRow, normalizeHeaderKeys, isNoSku } from "@/lib/export-raw-mapper";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -115,6 +115,23 @@ export async function GET(req: NextRequest) {
         .upsert(chunk, { onConflict: "row_key" });
       if (error) throw new Error(`UPSERT 실패 (${i}~): ${error.message}`);
       log.rows_upserted += chunk.length;
+    }
+
+    // 4-1. 비상품(SKU "-"/빈칸) 행 정리
+    // row_key 규칙 변경(2026-11-27) 전에 "BL|-" 키로 합쳐져 저장된 옛 행이 남아 있으면
+    // 새 키로 들어온 행과 이중 집계되므로 삭제. Lock 행은 건드리지 않는다.
+    const currentKeys = new Set(dedupedRows.map(r => r.row_key));
+    const { data: noSkuRows, error: noSkuErr } = await sb
+      .from("history_export_raw")
+      .select("row_key,style_color_size_code,is_locked")
+      .or("style_color_size_code.is.null,style_color_size_code.eq.,style_color_size_code.like.-%");
+    if (noSkuErr) throw new Error(`비상품 행 조회 실패: ${noSkuErr.message}`);
+    const staleKeys = (noSkuRows || [])
+      .filter(r => !r.is_locked && isNoSku(r.style_color_size_code) && !currentKeys.has(r.row_key))
+      .map(r => r.row_key);
+    if (staleKeys.length > 0) {
+      const { error: delErr } = await sb.from("history_export_raw").delete().in("row_key", staleKeys);
+      if (delErr) throw new Error(`비상품 옛 행 삭제 실패: ${delErr.message}`);
     }
 
     // 5. 로그 업데이트 (성공)
